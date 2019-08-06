@@ -1111,6 +1111,9 @@ CacheCntlr::accessDRAM(Core::mem_op_t mem_op_type, IntPtr address, bool isPrefet
          LOG_PRINT_ERROR("Unsupported Mem Op Type(%u)", mem_op_type);
    }
 
+   // CommTracer
+   Sim()->getCommTracer()->rec_core_dram_lat(m_core_id, dram_latency.getNS(), getCacheBlockSize(), t_issue.getNS());
+   
    return boost::tuple<HitWhere::where_t, SubsecondTime>(hit_where, dram_latency);
 }
 

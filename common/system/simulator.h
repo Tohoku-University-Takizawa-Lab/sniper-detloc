@@ -4,6 +4,7 @@
 #include "config.h"
 #include "log.h"
 #include "inst_mode.h"
+#include "comm_tracer.h"
 
 #include <decoder.h>
 
@@ -72,6 +73,8 @@ public:
    MemoryTracker *getMemoryTracker() { return m_memory_tracker; }
    void setMemoryTracker(MemoryTracker *memory_tracker) { m_memory_tracker = memory_tracker; }
 
+   CommTracer *getCommTracer() { return m_comm_tracer; }
+   
    bool isRunning() { return m_running; }
    static void enablePerformanceModels();
    static void disablePerformanceModels();
@@ -106,6 +109,9 @@ private:
    FaultinjectionManager *m_faultinjection_manager;
    RoutineTracer *m_rtn_tracer;
    MemoryTracker *m_memory_tracker;
+   
+   // Communication tracer
+   CommTracer *m_comm_tracer;
 
    bool m_running;
    bool m_inst_mode_output;

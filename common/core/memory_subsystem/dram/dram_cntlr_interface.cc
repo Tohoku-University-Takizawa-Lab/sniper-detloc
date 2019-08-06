@@ -4,6 +4,9 @@
 #include "shmem_perf.h"
 #include "log.h"
 
+// Added for CommTracer
+#include "simulator.h"
+
 void DramCntlrInterface::handleMsgFromTagDirectory(core_id_t sender, PrL1PrL2DramDirectoryMSI::ShmemMsg* shmem_msg)
 {
    PrL1PrL2DramDirectoryMSI::ShmemMsg::msg_t shmem_msg_type = shmem_msg->getMsgType();
@@ -21,6 +24,9 @@ void DramCntlrInterface::handleMsgFromTagDirectory(core_id_t sender, PrL1PrL2Dra
 
          boost::tie(dram_latency, hit_where) = getDataFromDram(address, shmem_msg->getRequester(), data_buf, msg_time, shmem_msg->getPerf());
 
+         // CommTracer: comm_tracer.cc
+         Sim()->getCommTracer()->rec_core_dram_lat(sender, dram_latency.getNS(), getCacheBlockSize(), msg_time.getNS());
+         
          getShmemPerfModel()->incrElapsedTime(dram_latency, ShmemPerfModel::_SIM_THREAD);
 
          shmem_msg->getPerf()->updateTime(getShmemPerfModel()->getElapsedTime(ShmemPerfModel::_SIM_THREAD),

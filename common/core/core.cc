@@ -17,6 +17,9 @@
 #include "topology_info.h"
 #include "cheetah_manager.h"
 
+// CommTracer accessed thread object
+#include "thread.h"
+
 #include <cstring>
 
 #if 0
@@ -476,6 +479,9 @@ Core::accessMemory(lock_signal_t lock_signal, mem_op_t mem_op_type, IntPtr d_add
       data_buffer = NULL; // initiateMemoryAccess's data is not used
    }
 
+   // CommTracer
+   Sim()->getCommTracer()->trace_comm(d_addr, getThread()->getId(), now.getNS(), data_size);
+   
    if (modeled == MEM_MODELED_NONE)
       return makeMemoryResult(HitWhere::UNKNOWN, SubsecondTime::Zero());
    else
