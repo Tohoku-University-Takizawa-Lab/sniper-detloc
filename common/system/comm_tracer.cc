@@ -19,19 +19,28 @@ CommTracer::CommTracer()
     // Check configuration parameter for comm detection
     //m_num_threads = Sim()->getThreadManager()->getNumThreads();
     m_num_threads = Sim()->getConfig()->getApplicationCores();
+    fname_comm_count = Sim()->getConfig()->formatOutputFileName("sim.comm_count");
+    fname_comm_sz = Sim()->getConfig()->formatOutputFileName("sim.comm_size");
+    fname_comm_events = Sim()->getConfig()->formatOutputFileName("sim.comm_events");
+    fname_thread_lats = Sim()->getConfig()->formatOutputFileName("sim.thread_lats");
+    fname_mem_access = Sim()->getConfig()->formatOutputFileName("sim.mem_access");
+
     m_trace_mem = Sim()->getCfg()->getBoolDefault("comm_tracer/mem_access_enable", false);
     m_trace_comm = Sim()->getCfg()->getBoolDefault("comm_tracer/enable", false);
     if (m_trace_comm) {
         m_block_size = Sim()->getCfg()->getInt("comm_tracer/comm_size");
-        m_max_block = Sim()->getCfg()->getInt("comm_tracer/max_block");
+        if (Sim()->getCfg()->hasKey("comm_tracer/max_block")) {
+            m_max_block = Sim()->getCfg()->getInt("comm_tracer/max_block");
+        }
         m_trace_comm_events = Sim()->getCfg()->getBoolDefault("comm_tracer/trace_time", false);
-        m_time_res = Sim()->getCfg()->getFloat("comm_tracer/time_interval");
-        printf("Communication tracing is enabled, block_size = %lu (%d B)\n",
+        printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes)\n",
                 m_block_size, 1 << m_block_size);
         if (m_trace_comm_events) {
-            if (m_time_res < 1) {
-                m_time_res = 1;
-                printf("m_time_res must be > 0!\n");
+            if (Sim()->getCfg()->hasKey("comm_tracer/time_res")) {
+                m_time_res = Sim()->getCfg()->getFloat("comm_tracer/time_res");
+                if (m_time_res < 1) 
+                    m_time_res = 1;
+                printf("[DeTLoc] comm_tracer.time_res must be > 0, using default (1 ns).\n");
             }
             printf("Communication time will be traced (resolution = %.2f ns)\n", m_time_res);
             m_flushInterval = Sim()->getCfg()->getFloat("comm_tracer/flush_interval");
@@ -40,14 +49,16 @@ CommTracer::CommTracer()
             //if (m_flushInterval > 0)
             //    run_flush_thread();
         }
-        m_trace_comm_four = Sim()->getCfg()->getBoolDefault("comm_tracer/four_win_mode", true);
+        m_trace_comm_four = Sim()->getCfg()->getBoolDefault("comm_tracer/four_win_mode", false);
         if (m_trace_comm_four)
-            printf("Using four window size for the tracing\n");
+            printf("[DeTLoc] Using four window size for the tracing\n");
         //init();
+        // Pause tracing on startup, the simulator or ROI will resume it as necessary
+        setPaused(true);
     }
     m_trace_t_lats = Sim()->getCfg()->getBoolDefault("comm_tracer/latency_trace_enable", false);
     if (m_trace_t_lats)
-        printf("Threads' latency tracing is enabled\n");
+        printf("[DeTLoc] Threads' latency tracing is enabled\n");
 }
 
 void
@@ -58,10 +69,22 @@ CommTracer::init() {
         commmap[i].second = 0;
     }
      */
-    m_commLine.initZeros(m_max_block);
+    //m_commLine.initZeros(m_max_block);
+}
+
+void
+CommTracer::setPaused(bool paused) {
+    m_paused = paused;
+    std::cout << "[DeTLoc] Update paused state: " << m_paused << std::endl;
 }
 
 CommTracer::~CommTracer() {
+}
+
+void
+CommTracer::fini() {
+    if (!m_paused)
+        m_paused = true;
     if (m_trace_comm) {
         print_comm();
         if (m_trace_comm_events) {
@@ -76,10 +99,17 @@ CommTracer::~CommTracer() {
 }
 
 void
-CommTracer::inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize) {
-    if (a != b - 1) {
-        comm_matrix[a][b - 1] += 1;
-        comm_sz_matrix[a][b - 1] += dsize;
+CommTracer::inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize,
+        IntPtr a_addr, IntPtr b_addr, bool a_w_op, bool b_w_op) {
+    // Also check if two threads precisely access the same address
+    thread_id_t r_b = b - 1;
+    if (a_addr == b_addr && a != r_b && b_w_op == true && a_w_op == false) {
+        comm_matrix[a][r_b] += 1;
+        comm_sz_matrix[a][r_b] += dsize;
+        //if (b_w_op == true) {
+        //std::cout << "** Pair(" << a << "," << b << "), a_addr=" << a_addr 
+        //          << ", b_addr=" << b_addr << ", a_op=" << a_w_op << ", b_op=" << b_w_op << std::endl;
+        //}
     }
 }
 
@@ -97,7 +127,7 @@ void
 CommTracer::print_comm() {
     //static long n = 0;
     //int num_threads = Sim()->getThreadManager()->getNumThreads();
-    int num_threads = Sim()->getConfig()->getApplicationCores();
+    //int num_threads = Sim()->getConfig()->getApplicationCores();
     std::ofstream f, f_sz;
     //char fname[255];
     //char fname_sz[255];
@@ -105,8 +135,8 @@ CommTracer::print_comm() {
     //sprintf(fname, "%s.full.%d.comm.csv", img_name.c_str(), cs);
     //sprintf(fname_l, "%s.full.%d.comm_size.csv", img_name.c_str(), cs);
 
-    String fname = "sim.comm-count";
-    String fname_sz = "sim.comm-size";
+    //String fname = "sim.comm-count";
+    //String fname_sz = "sim.comm-size";
 
     /*
     int real_tid[MAXTHREADS + 1];
@@ -117,20 +147,24 @@ CommTracer::print_comm() {
      */
     //cout << fname << endl;
     //cout << fname_l << endl;
-    std::cout << "[CommTracer] Saving communication matrix to: " << fname << ',' << fname_sz << std::endl;
+    std::cout << "[CommTracer] Saving communication matrix to: " << fname_comm_count 
+                << ',' << fname_comm_sz << std::endl;
 
-    f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
-    f_sz.open(Sim()->getConfig()->formatOutputFileName(fname_sz).c_str());
+    //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
+    //f_sz.open(Sim()->getConfig()->formatOutputFileName(fname_sz).c_str());
+    f.open(fname_comm_count.c_str());
+    f_sz.open(fname_comm_sz.c_str());
 
-    for (int i = num_threads - 1; i >= 0; i--) {
-        //a = real_tid[i];
-        for (int j = 0; j < num_threads; j++) {
+    UInt32 i = m_num_threads;
+    while (i > 0) {
+        i--; 
+        for (UInt32 j = 0; j < m_num_threads; j++) {
             //b = real_tid[j];
             //f << comm_matrix[a][b] + comm_matrix[b][a];
             //fl << comm_size_matrix[a][b] + comm_size_matrix[b][a];
             f << comm_matrix[i][j] + comm_matrix[j][i];
             f_sz << comm_sz_matrix[i][j] + comm_sz_matrix[j][i];
-            if (j != num_threads - 1) {
+            if (j != m_num_threads - 1) {
                 f << ",";
                 f_sz << ",";
             }
@@ -138,6 +172,24 @@ CommTracer::print_comm() {
         f << std::endl;
         f_sz << std::endl;
     }
+    /*
+    for (UInt32 i = m_num_threads - 1; i == 0; i--) {
+        //a = real_tid[i];
+        for (UInt32 j = 0; j < m_num_threads; j++) {
+            //b = real_tid[j];
+            //f << comm_matrix[a][b] + comm_matrix[b][a];
+            //fl << comm_size_matrix[a][b] + comm_size_matrix[b][a];
+            f << comm_matrix[i][j] + comm_matrix[j][i];
+            f_sz << comm_sz_matrix[i][j] + comm_sz_matrix[j][i];
+            if (j != m_num_threads - 1) {
+                f << ",";
+                f_sz << ",";
+            }
+        }
+        f << std::endl;
+        f_sz << std::endl;
+    }
+    */
     f << std::endl;
     f_sz << std::endl;
     f.close();
@@ -188,18 +240,19 @@ CommTracer::add_comm_event_f(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 ds
 }
 
 void
-CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize) {
+CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize, bool w_op) {
     if (m_trace_mem) {
         threadsMemAccesses[tid] += 1;
         threadsMemSizes[tid] += dsize;
     }
 
-    if (m_trace_comm) {
+    if (m_trace_comm && !m_paused) {
         IntPtr line = addr >> m_block_size;
+        //std::cout << "** thread-" << tid << ", addr=" << addr << ", line=" << line << std::endl;
         if (!m_trace_comm_events && !m_trace_comm_four)
-            trace_comm_spat(line, tid, dsize);
+            trace_comm_spat(line, tid, dsize, addr, w_op);
         else if (m_trace_comm_events && !m_trace_comm_four)
-            trace_comm_spat_tempo(line, tid, ns, dsize);
+            trace_comm_spat_tempo(line, tid, ns, dsize, addr, w_op);
         else if (!m_trace_comm_events && m_trace_comm_four)
             trace_comm_spat_f(line, tid, dsize, addr);
         else
@@ -208,7 +261,8 @@ CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize) {
 }
 
 void
-CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts, UInt32 dsize) {
+CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts,
+        UInt32 dsize, IntPtr addr, bool w_op) {
     //if (num_threads < 2)
     //    return;
 
@@ -245,12 +299,12 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts, 
         //commmap_f[line] = tid;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
-        m_commLSet.updateLine(line, tid + 1);
+        m_commLSet.updateLine(line, tid + 1, addr, w_op);
     } else if (a != 0 && b != 0) {
         // sh = 2;
         // two previous accesses
-        inc_comm(tid, a, dsize);
-        inc_comm(tid, b, dsize);
+        inc_comm(tid, a, dsize, addr, comm_l.getFirst_addr(), w_op, comm_l.getFirst_w_op());
+        inc_comm(tid, b, dsize, addr, comm_l.getSecond_addr(), w_op, comm_l.getSecond_w_op());
 
         add_comm_event(tid, a, curr_ts, dsize);
         add_comm_event(tid, b, curr_ts, dsize);
@@ -260,11 +314,11 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts, 
         //commmap_s[line] = a;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
-        m_commLSet.updateLine(line, tid + 1);
+        m_commLSet.updateLine(line, tid + 1, addr, w_op);
     } else {
         // sh = 1;
         // one previous access => needs to be in pos 0
-        inc_comm(tid, a, dsize);
+        inc_comm(tid, a, dsize, addr, comm_l.getFirst_addr(), w_op, comm_l.getFirst_w_op());
 
         add_comm_event(tid, a, curr_ts, dsize);
         //commmap[line].first = tid + 1;
@@ -273,12 +327,13 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts, 
         //commmap_s[line] = a;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
-        m_commLSet.updateLine(line, tid + 1);
+        m_commLSet.updateLine(line, tid + 1, addr, w_op);
     }
 }
 
 void
-CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize) {
+CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr addr,
+        bool w_op) {
     //if (num_threads < 2)
     //    return;
 
@@ -307,7 +362,7 @@ CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize) {
     thread_id_t b = comm_l.getSecond();
     //thread_id_t b = comm_win->second;
 
-    if (a == 0 && b == 0) {
+    //if (a == 0 && b == 0) {
         // sh = 0;
         // no one accessed line before, store accessing thread in pos 0
         //commmap[line].first = tid + 1;
@@ -316,27 +371,37 @@ CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize) {
         //threadLine->update(tid + 1);
         //comm_l.update(tid + 1);
         //comm_win->update(tid + 1);
-        m_commLSet.updateLine(line, tid + 1);
-    } else if (a != 0 && b != 0) {
+        //if (w_op == true)
+        //m_commLSet.updateLine(line, tid + 1, addr, w_op);
+    //}
+    if (a != 0 && b != 0) {
+    //else if (a != 0 && b != 0) {
         // sh = 2;
         // two previous accesses
-        inc_comm(tid, a, dsize);
-        inc_comm(tid, b, dsize);
+        inc_comm(tid, a, dsize, addr, comm_l.getFirst_addr(), w_op, comm_l.getFirst_w_op());
+        inc_comm(tid, b, dsize, addr, comm_l.getSecond_addr(), w_op, comm_l.getSecond_w_op());
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid + 1);
         //comm_l.update(tid + 1);
         //comm_win->update(tid + 1);
-        m_commLSet.updateLine(line, tid + 1);
-    } else {
+        //if (w_op == true)
+        //    m_commLSet.updateLine(line, tid + 1, addr, w_op);
+    }
+    else if (a != 0) {
+    //else {
         // sh = 1;
         // one previous access => needs to be in pos 0
-        inc_comm(tid, a, dsize);
+        inc_comm(tid, a, dsize, addr, comm_l.getFirst_addr(), w_op, comm_l.getFirst_w_op());
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid + 1);
         //comm_l.update(tid + 1);
         //comm_win->update(tid + 1);
-        m_commLSet.updateLine(line, tid + 1);
+        //if (w_op == true)
+        //    m_commLSet.updateLine(line, tid + 1, addr, w_op);
     }
+    
+    if (w_op == true)
+        m_commLSet.updateLine(line, tid + 1, addr, w_op);
 }
 
 void
@@ -430,15 +495,19 @@ CommTracer::trace_comm_spat_tempo_f(IntPtr line, thread_id_t tid, UInt64 curr_ts
 void
 CommTracer::print_comm_events() {
     std::ofstream f_accu;
-    String fname_accu = "sim.comm-events";
-    int num_threads = Sim()->getConfig()->getApplicationCores();
-    int i, j, l, r;
+    //String fname_accu = "sim.comm-events";
+    //int num_threads = Sim()->getConfig()->getApplicationCores();
+    //int i, j, l, r;
+    UInt32 i, j, l, r;
 
-    std::cout << "Print communication events: " << fname_accu << std::endl;
+    std::cout << "Print communication events: " << fname_comm_events << std::endl;
     //std::unordered_map<UInt64, TPayload> accums[COMM_MAXTHREADS + 1][COMM_MAXTHREADS + 1];
 
-    for (i = num_threads - 1; i >= 0; i--) {
-        for (j = 0; j < num_threads; j++) {
+    i = m_num_threads;
+    while (i > 0) {
+        i--;
+    //for (i = m_num_threads - 1; i == 0; i--) {
+        for (j = 0; j < m_num_threads; j++) {
 
             //for (auto it : timeEventMap[i][j]) {
             while (isFlushing[i])
@@ -468,10 +537,14 @@ CommTracer::print_comm_events() {
         }
     }
 
-    f_accu.open(Sim()->getConfig()->formatOutputFileName(fname_accu).c_str());
+    //f_accu.open(Sim()->getConfig()->formatOutputFileName(fname_accu).c_str());
+    f_accu.open(fname_comm_events.c_str());
     if (f_accu.is_open()) {
-        for (i = num_threads - 1; i >= 0; i--) {
-            for (j = 0; j < num_threads; j++) {
+        i = m_num_threads;
+        while (i > 0) {
+            i--;
+        //for (i = m_num_threads - 1; i == 0; i--) {
+            for (j = 0; j < m_num_threads; j++) {
                 for (auto it : accums[i][j]) {
                     //if (it.first >= 0 && it.second.count > 0) {
                     f_accu << i << ',' << j << ',' << it.first << ','
@@ -550,19 +623,19 @@ CommTracer::rec_t_lat_delay(thread_id_t tid, UInt64 lat, UInt64 q_delay, UInt32 
 
 void
 CommTracer::print_t_lats() {
-    int i;
     std::ofstream f;
-    String fname = "sim.thread-lats";
-    int num_threads = Sim()->getConfig()->getApplicationCores();
+    //String fname = "sim.thread-lats";
+    //int num_threads = Sim()->getConfig()->getApplicationCores();
 
-    std::cout << "Print thread's mem access latencies: " << fname << std::endl;
+    std::cout << "Print thread's mem access latencies: " << fname_thread_lats << std::endl;
 
-    f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
+    //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
+    f.open(fname_thread_lats.c_str());
     if (f.is_open()) {
         //printf("Print latencies of %d threads\n", num_threads);
         f << "thread,max_lat,max_lat_t,max_lat_data_len,total_lat,n_access,avg_lat,"
                 << "t_delay_max,t_delay_max_t,t_delay_tot,t_delay_n\n";
-        for (i = 0; i < num_threads; i++) {
+        for (UInt32 i = 0; i < m_num_threads; i++) {
             if (threadsLatMax[i] > 0) {
                 f << i << ',' << threadsLatMax[i] << ',' << threadsLatMaxTime[i]
                         << ',' << threadsLatMaxDataLen[i]
@@ -583,16 +656,17 @@ CommTracer::print_t_lats() {
 void CommTracer::print_mem() {
     //int i;
     std::ofstream f;
-    String fname = "sim.mem-accesses";
-    int num_threads = Sim()->getConfig()->getApplicationCores();
+    //String fname = "sim.mem-accesses";
+    //int num_threads = Sim()->getConfig()->getApplicationCores();
 
-    std::cout << "Print thread's mem access: " << fname << std::endl;
+    std::cout << "Print thread's mem access: " << fname_mem_access << std::endl;
 
-    f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
+    //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
+    f.open(fname_mem_access.c_str());
     if (f.is_open()) {
 
         f << "tid,n_access,sz_access\n";
-        for (int i = 0; i < num_threads; i++) {
+        for (UInt32 i = 0; i < m_num_threads; i++) {
             f << i << ',' << threadsMemAccesses[i] << ',' << threadsMemSizes[i]
                     << std::endl;
         }
@@ -615,10 +689,11 @@ void CommTracer::flush_thread_events(thread_id_t t1, thread_id_t t2) {
     //        r = t1;
     //    }
     //ss << "sim.comm-events-" << t1 << "_" << t2;
-    String fname = "sim.comm-events-" + itostr(t1) + "_" + itostr(t2);
+    String fname = fname_comm_events + "-" + itostr(t1) + "_" + itostr(t2);
 
-    f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str(),
-            std::ios::app);
+    //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str(),
+    //        std::ios::app);
+    f.open(fname_comm_events.c_str(), std::ios::app);
     //std::cout << "Flush events[ " << t1 << "][" << t2 << ']' << std::endl;
     //f.open(ss.str(), std::ios::app);
     if (f.is_open()) {

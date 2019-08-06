@@ -14,6 +14,7 @@
 #include "fixed_types.h"
 #include "lock.h"
 
+/*
 struct CommLWin {
     thread_id_t first;
     thread_id_t second;
@@ -27,40 +28,68 @@ struct CommLWin {
         second = tmp;
     }
 };
+*/
 
 class CommL {
 public:
-    UInt64 m_Addr;
+    IntPtr m_Line;
     size_t m_Ref; //Start from 1, 0 means dummy
     mutable thread_id_t m_First;
     mutable thread_id_t m_Second;
 
-    CommL(UInt64 addr):
-        m_Addr(addr), m_Ref(0), m_First(0), m_Second(0) {
+    mutable IntPtr m_First_addr;
+    mutable IntPtr m_Second_addr;
+
+    mutable bool m_First_w_op;
+    mutable bool m_Second_w_op;
+
+    CommL(IntPtr line):
+        m_Line(line), m_Ref(0), m_First(0), m_Second(0), m_First_addr(0), m_Second_addr(0),
+        m_First_w_op(0), m_Second_w_op(0) {
     }
     
-    CommL(UInt64 addr, size_t ref):
-        m_Addr(addr), m_Ref(ref), m_First(0), m_Second(0) {
+    CommL(IntPtr line, size_t ref):
+        m_Line(line), m_Ref(ref), m_First(0), m_Second(0), m_First_addr(0), m_Second_addr(0),
+        m_First_w_op(0), m_Second_w_op(0) {
     }
 
     bool operator< (const CommL &clObj) const {
-        return (this->m_Addr < clObj.m_Addr);
+        return (this->m_Line < clObj.m_Line);
     }
 
     bool operator ==(const CommL &clObj) const {
-        return (m_Addr == clObj.m_Addr);
+        return (m_Line == clObj.m_Line);
     }
 
-    void update(thread_id_t tid) {
-        thread_id_t tmp = m_First;
+    void update(thread_id_t tid, IntPtr addr, bool w_op);
+    /*{
+        m_Second = m_First;
         m_First = tid;
-        m_Second = tmp;
+
+        m_Second_addr = m_First_addr;
+        m_First_addr = addr;
+
+        m_Second_w_op = m_First_w_op;
+        m_First_w_op = w_op;
     }
+    */
     thread_id_t getFirst() {
         return m_First;
     }
     thread_id_t getSecond() {
         return m_Second;
+    }
+    IntPtr getFirst_addr() {
+        return m_First_addr;
+    }
+    IntPtr getSecond_addr() {
+        return m_Second_addr;
+    }
+    bool getFirst_w_op() {
+        return m_First_w_op;
+    }
+    bool getSecond_w_op() {
+        return m_Second_w_op;
     }
 };
 
@@ -79,20 +108,22 @@ namespace std
 
 class CommLSet {
 private:
-    Lock setLock;
-    Lock vecLock;
+    //Lock setLock;
+    Lock m_set_lock;
+    //Lock vecLock;
     std::set<CommL> setCommL;
     //std::unordered_set<CommL> setCommL;
-    std::vector<CommLWin *> lineWindows;
+    //std::vector<CommLWin *> lineWindows;
 
 public:
     CommLSet();
     ~CommLSet();
-    CommL getLine(UInt64 addr);
-    CommL getLineMod(UInt64 addr);
-    void updateLine(UInt64 addr, thread_id_t tid);
-    bool exists(UInt64 addr);
-    CommLWin *getLineWindow(UInt64 addr);
+    CommL getLine(IntPtr line);
+    CommL getLineMod(IntPtr line);
+    void updateLine(IntPtr line, thread_id_t tid, IntPtr addr, bool w_op);
+    bool exists(IntPtr line);
+    Lock &getLock() { return m_set_lock; }
+    //CommLWin *getLineWindow(UInt64 addr);
 };
 
 #endif /* COMML_H */

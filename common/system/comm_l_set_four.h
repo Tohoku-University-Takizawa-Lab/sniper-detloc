@@ -85,7 +85,8 @@ public:
 
 class CommLSetFour {
 private:
-    Lock setLock;
+    //Lock setLock;
+    Lock m_set_lock;
     std::set<CommLFour> setCommLF;
 
 public:
@@ -95,6 +96,7 @@ public:
     CommLFour getLineMod(IntPtr line);
     void updateLine(IntPtr line, thread_id_t tid, IntPtr addr);
     bool exists(IntPtr line);
+    Lock &getLock() { return m_set_lock; }
 };
 
 #endif /* COMMLFOUR_H */

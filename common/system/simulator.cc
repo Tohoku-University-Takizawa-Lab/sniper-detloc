@@ -97,6 +97,7 @@ dl::Decoder * Simulator::getDecoder()
 
 void Simulator::release()
 {
+   Sim()->getCommTracer()->fini();
    m_singleton->m_running = false;
    // Fxsupport::fini();
    delete m_singleton;
@@ -198,6 +199,9 @@ void Simulator::start()
    {
       // roi-begin
       Sim()->getMagicServer()->setPerformance(true);
+      
+      // Run tracer
+      Sim()->getCommTracer()->setPaused(false);
    }
 
    m_running = true;
@@ -213,6 +217,8 @@ Simulator::~Simulator()
    {
       // roi-end
       getMagicServer()->setPerformance(false);
+
+      //getCommTracer()->setPaused(true);
    }
 
    m_stats_manager->recordStats("stop");
@@ -261,7 +267,9 @@ Simulator::~Simulator()
    delete m_tags_manager;              m_tags_manager = NULL;
    delete m_transport;                 m_transport = NULL;
    delete m_stats_manager;             m_stats_manager = NULL;
-   delete m_comm_tracer;               //m_comm_tracer = NULL;
+   // Call CommTracer's dtor
+   //delete m_comm_tracer;               //m_comm_tracer = NULL;
+
 }
 
 void Simulator::enablePerformanceModels()

@@ -1,34 +1,58 @@
 #include "comm_l_set.h"
 
+void
+CommL::update(thread_id_t tid, IntPtr addr, bool w_op) {
+    m_Second = m_First;
+    m_First = tid;
+
+    m_Second_addr = m_First_addr;
+    m_First_addr = addr;
+
+    //m_Second_w_op = m_First_w_op;
+    //m_First_w_op = w_op;
+
+    // Set latest write
+    //if (m_First_addr == m_Second_addr && w_op == true) {
+    if (m_First_addr == m_Second_addr) {
+       m_Second_w_op = false; 
+    }
+    else {
+        m_Second_w_op = m_First_w_op;
+    }
+    m_First_w_op = w_op;
+}
+
 CommLSet::CommLSet()
-: setLock()
-, vecLock()
-, setCommL()
-, lineWindows() {
-    lineWindows.reserve(1000);
-    CommLWin * new_win = new CommLWin();
-    lineWindows.push_back(new_win);
+: setCommL() {
+//: setLock()
+//, vecLock()
+//, setCommL() {
+//, lineWindows() {
+    //lineWindows.reserve(1000);
+    //CommLWin * new_win = new CommLWin();
+    //lineWindows.push_back(new_win);
 }
 
 CommLSet::~CommLSet() {
 }
 
-bool CommLSet::exists(UInt64 line) {
+bool CommLSet::exists(IntPtr line) {
     bool found = false;
     CommL cand_cl = CommL(line);
     //CommL *cand_cl = new CommL(line);
-    setLock.acquire_read();
+    //setLock.acquire_read();
+    ScopedLock sl(getLock());
     //std::set<CommL>::iterator it = setCommL.find(cand_cl);
     auto it = setCommL.find(cand_cl);
     if(it != setCommL.end())
         found = true;
     else
         found = false;
-    setLock.release();
+    //setLock.release();
     return found;
 }
 
-CommL CommLSet::getLine(UInt64 line) {
+CommL CommLSet::getLine(IntPtr line) {
     CommL cand_cl = CommL(line);
     //CommL *cand_cl = new CommL(line);
     //setLock.acquire_read();
@@ -41,26 +65,28 @@ CommL CommLSet::getLine(UInt64 line) {
     else {
         CommL new_cl = CommL(line);
         //CommL *new_cl = new CommL(line);
-        setLock.acquire();
+        //setLock.acquire();
+        ScopedLock sl(getLock());
         auto result = setCommL.insert(new_cl);
-        setLock.release();
+        //setLock.release();
         return (*result.first);
     }
 }
 
-void CommLSet::updateLine(UInt64 line, thread_id_t tid) {
+void CommLSet::updateLine(IntPtr line, thread_id_t tid, IntPtr addr, bool w_op) {
     CommL cand_cl = CommL(line);
     auto it = setCommL.find(cand_cl);
-    const_cast<CommL&>(*it).update(tid);
+    const_cast<CommL&>(*it).update(tid, addr, w_op);
 }
 
-CommL CommLSet::getLineMod(UInt64 line) {
+CommL CommLSet::getLineMod(IntPtr line) {
     CommL l = getLine(line);
     //CommL ptr = const_cast<CommL&>(l);
     //return ptr;
     return const_cast<CommL&>(l);
 }
 
+/*
 CommLWin *CommLSet::getLineWindow(UInt64 line) {
     CommL cand_cl = CommL(line);
     //setLock.acquire_read();
@@ -102,6 +128,7 @@ CommLWin *CommLSet::getLineWindow(UInt64 line) {
         //return (*it);
     }
 }
+*/
 
 /*
 CommL CommLSet::getLine(UInt64 line) {

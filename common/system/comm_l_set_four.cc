@@ -1,8 +1,8 @@
 #include "comm_l_set_four.h"
 
 CommLSetFour::CommLSetFour()
-: setLock()
-, setCommLF() {
+//: setLock()
+: setCommLF() {
   
 }
 
@@ -13,14 +13,15 @@ bool CommLSetFour::exists(IntPtr line) {
     bool found = false;
     CommLFour cand_cl = CommLFour(line);
     //CommL *cand_cl = new CommL(line);
-    setLock.acquire_read();
+    //setLock.acquire_read();
+    ScopedLock sl(getLock());
     //std::set<CommL>::iterator it = setCommL.find(cand_cl);
     auto it = setCommLF.find(cand_cl);
     if(it != setCommLF.end())
         found = true;
     else
         found = false;
-    setLock.release();
+    //setLock.release();
     return found;
 }
 
@@ -37,9 +38,10 @@ CommLFour CommLSetFour::getLine(IntPtr line) {
     else {
         CommLFour new_cl = CommLFour(line);
         //CommL *new_cl = new CommL(line);
-        setLock.acquire();
+        //setLock.acquire();
+        ScopedLock sl(getLock());
         auto result = setCommLF.insert(new_cl);
-        setLock.release();
+        //setLock.release();
         return (*result.first);
     }
 }

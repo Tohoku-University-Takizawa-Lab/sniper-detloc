@@ -195,12 +195,13 @@ public:
     CommTracer();
     ~CommTracer();
 
-    void inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize);
+    void inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize, IntPtr a_addr, IntPtr b_addr,
+            bool a_w_op, bool b_w_op);
     void add_comm_event(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 dsize);
-    void trace_comm(IntPtr addr, thread_id_t tid, UInt64 ms, UInt32 dsize);
-    void trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 ms, UInt32 dsize);
-    void trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize);
-    void inc_comm_f(thread_id_t a, thread_id_t b, UInt32 dsize, IntPtr a_ddr, IntPtr b_addr);
+    void trace_comm(IntPtr addr, thread_id_t tid, UInt64 ms, UInt32 dsize, bool w_op);
+    void trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 ms, UInt32 dsize, IntPtr addr, bool w_op);
+    void trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr addr, bool w_op);
+    void inc_comm_f(thread_id_t a, thread_id_t b, UInt32 dsize, IntPtr a_addr, IntPtr b_addr);
     void trace_comm_spat_f(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr addr);
     void trace_comm_spat_tempo_f(IntPtr line, thread_id_t tid, UInt64 ms, UInt32 dsize, IntPtr addr);
     void add_comm_event_f(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 dsize, IntPtr a_addr, IntPtr b_addr);
@@ -215,6 +216,8 @@ public:
     void flush_thread_events(thread_id_t t1, thread_id_t t2);
     void flush_tempo();
     void run_flush_thread();
+    void setPaused(bool paused);
+    void fini();
 
     //void simThreadStartCallback();
     //void simThreadExitCallback();
@@ -229,7 +232,15 @@ private:
     float m_time_res = 1;
     bool m_trace_comm_events;
     bool m_trace_mem;
+    bool m_paused;
     CommLine m_commLine;
+
+    // filenames
+    String fname_comm_count;
+    String fname_comm_sz;
+    String fname_comm_events;
+    String fname_thread_lats;
+    String fname_mem_access;
 
     // Dedicated thread for flushing
     UInt64 m_flushInterval;
