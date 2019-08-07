@@ -165,6 +165,7 @@ void print_allocations();
 
 UInt64 MagicServer::setPerformance(bool enabled)
 {
+
    if (m_performance_enabled == enabled)
       return 1;
 
@@ -176,6 +177,7 @@ UInt64 MagicServer::setPerformance(bool enabled)
 
    if (m_performance_enabled)
    {
+      Sim()->getCommTracer()->setPaused(false);
       printf("[SNIPER] Enabling performance models\n");
       fflush(NULL);
       t_start.start();
@@ -191,6 +193,7 @@ UInt64 MagicServer::setPerformance(bool enabled)
       fflush(NULL);
       logmem_enable(false);
       logmem_write_allocations();
+      Sim()->getCommTracer()->setPaused(true);
    }
 
    if (enabled)
