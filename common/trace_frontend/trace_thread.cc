@@ -333,6 +333,8 @@ bool TraceThread::handleEmuFunc(Sift::EmuType type, Sift::EmuRequest &req, Sift:
       case Sift::EmuTypeSetThreadInfo:
       {
          m_thread->m_os_info.tid = req.setthreadinfo.tid;
+         // DeTLoc print PID 
+         //printf("[Sift] tid: %d, pid: %d\n", m_thread->getId(), m_thread->m_os_info.tid);
          return true;
       }
       case Sift::EmuTypePAPIstart:
@@ -511,6 +513,9 @@ void TraceThread::handleCacheOnlyFunc(uint8_t icount, Sift::CacheOnlyType type, 
 
       case Sift::CacheOnlyMemRead:
       case Sift::CacheOnlyMemWrite:
+         // CommTracer
+         // This intercept point ensure tracer uses address before va2pa 
+         //Sim()->getCommTracer()->trace_comm(address, m_thread->getId(), 0, 4, type == Sift::CacheOnlyMemWrite ? true : false);
          core->accessMemory(
                Core::NONE,
                type == Sift::CacheOnlyMemRead ? Core::READ : Core::WRITE,

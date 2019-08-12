@@ -32,9 +32,12 @@ CommTracer::CommTracer()
         if (Sim()->getCfg()->hasKey("comm_tracer/max_block")) {
             m_max_block = Sim()->getCfg()->getInt("comm_tracer/max_block");
         }
+        m_prodcons = Sim()->getCfg()->getBoolDefault("comm_tracer/producer_consumer_mode", false);
+        printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes), prod/cons: %d\n",
+                m_block_size, 1 << m_block_size, m_prodcons);
+        
+        // Enable timestamp traces
         m_trace_comm_events = Sim()->getCfg()->getBoolDefault("comm_tracer/trace_time", false);
-        printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes)\n",
-                m_block_size, 1 << m_block_size);
         if (m_trace_comm_events) {
             if (Sim()->getCfg()->hasKey("comm_tracer/time_res")) {
                 m_time_res = Sim()->getCfg()->getFloat("comm_tracer/time_res");
@@ -112,6 +115,16 @@ CommTracer::inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize,
         //}
     }
 }
+
+void
+CommTracer::inc_comm_prod(thread_id_t a, thread_id_t b, UInt32 dsize) {
+    thread_id_t r_b = b - 1;
+    if (a != r_b) {
+        comm_matrix[a][r_b] += 1;
+        comm_sz_matrix[a][r_b] += dsize;
+    }
+}
+
 
 void
 CommTracer::inc_comm_f(thread_id_t a, thread_id_t b, UInt32 dsize,
@@ -249,7 +262,9 @@ CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize, bo
     if (m_trace_comm && !m_paused) {
         IntPtr line = addr >> m_block_size;
         //std::cout << "** thread-" << tid << ", addr=" << addr << ", line=" << line << std::endl;
-        if (!m_trace_comm_events && !m_trace_comm_four)
+        if (m_trace_comm_events == false && m_prodcons == true)
+            trace_comm_spat_prod(line, tid, dsize, addr, w_op);
+        else if (!m_trace_comm_events && !m_trace_comm_four)
             trace_comm_spat(line, tid, dsize, addr, w_op);
         else if (m_trace_comm_events && !m_trace_comm_four)
             trace_comm_spat_tempo(line, tid, ns, dsize, addr, w_op);
@@ -402,6 +417,29 @@ CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr a
     
     if (w_op == true)
         m_commLSet.updateLine(line, tid + 1, addr, w_op);
+}
+
+void CommTracer::trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize,
+        IntPtr addr, bool w_op) {
+    
+    if (w_op == true) {
+        UInt32 n_line = 1 + (dsize >> m_block_size);
+        //printf("[L-%ld] WRITE: %d, n_line: %d\n", line, dsize, n_line);
+        m_commLPS.updateCreateLineBatch(line, n_line, tid+1, addr);
+    }
+    else {
+        CommLProdCons clps = m_commLPS.getLineLazy(line);
+        if (clps.isEmpty() == false) {
+            if (clps.getSecond_addr() != 0 && clps.getSecond_addr() <= addr) {
+                inc_comm_prod(tid, clps.getSecond(), dsize);
+                //printf("[L-%ld] READ: %d, tid: %d, b: %d\n", line, dsize, tid, clps.getSecond());
+            }
+            else if (clps.getFirst_addr() <= addr) {
+                inc_comm_prod(tid, clps.getFirst(), dsize);
+                //printf("[L-%ld] READ: %d, tid: %d, a: %d\n", line, dsize, tid, clps.getFirst());
+            }
+        }
+    }
 }
 
 void

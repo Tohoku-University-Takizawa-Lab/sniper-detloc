@@ -480,8 +480,11 @@ Core::accessMemory(lock_signal_t lock_signal, mem_op_t mem_op_type, IntPtr d_add
    }
 
    // CommTracer
-   //if (mem_op_type == READ || mem_op_type == WRITE) {
+   //if (getThread()->getId() > 0)
+   //  LOG_PRINT_WARNING("** access mem tid: %d, pid_t: %d", getThread()->getId(), getThread()->m_os_info.tid);
+   // WARN: d_addr is virtual address
    Sim()->getCommTracer()->trace_comm(d_addr, getThread()->getId(), now.getNS(), data_size, (mem_op_type == WRITE));
+   //Sim()->getCommTracer()->trace_comm(d_addr, m_core_id, now.getNS(), data_size, (mem_op_type == WRITE));
    //}
 
    if (modeled == MEM_MODELED_NONE)

@@ -34,8 +34,12 @@ Thread::~Thread()
 
 void Thread::setCore(Core* core)
 {
+   //if (m_core)
+   //    LOG_PRINT_WARNING("[DEBUG] Migrating thread-%d from %d", m_thread_id, m_core->getId());
+
    if (m_core)
       m_core->setThread(NULL);
+
 
    m_core = core;
 

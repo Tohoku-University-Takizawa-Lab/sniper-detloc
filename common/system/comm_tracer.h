@@ -8,6 +8,7 @@
 #include "comm_trace_line.h"
 #include "comm_l_set.h"
 #include "comm_l_set_four.h"
+#include "comm_l_prod.h"
 
 #include <unordered_map>
 #include <mutex>
@@ -219,6 +220,10 @@ public:
     void setPaused(bool paused);
     void fini();
 
+    // Prod/cons methods
+    void inc_comm_prod(thread_id_t a, thread_id_t b, UInt32 dsize);
+    void trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr addr, bool w_op);
+
     //void simThreadStartCallback();
     //void simThreadExitCallback();
 
@@ -251,6 +256,9 @@ private:
     CommLSet m_commLSet;
     // Comm line of four window size
     CommLSetFour m_commLSetFour;
+    // Comm line of prod/cons
+    bool m_prodcons;
+    CommLProdConsSet m_commLPS;
 
     UInt64 m_num_threads;
     /*

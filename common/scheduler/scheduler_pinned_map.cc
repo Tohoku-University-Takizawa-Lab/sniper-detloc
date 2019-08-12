@@ -4,6 +4,7 @@
 #include "split_string.h"
 #include <fstream>
 #include <vector>
+//#include "thread.h"
 
 SchedulerPinnedMap::SchedulerPinnedMap(ThreadManager *thread_manager)
    : SchedulerPinnedBase(thread_manager, SubsecondTime::NS(Sim()->getCfg()->getInt("scheduler/pinned/quantum")))
