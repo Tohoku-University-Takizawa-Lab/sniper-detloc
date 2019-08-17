@@ -79,6 +79,9 @@ Thread* ThreadManager::createThread_unlocked(app_id_t app_id, thread_id_t creato
    m_thread_state.push_back(ThreadState());
    m_thread_state[thread->getId()].status = Core::INITIALIZING;
 
+   // Update num of threads in the CommTracers
+   Sim()->getCommTracer()->incNumThreads(thread_id);
+
    core_id_t core_id = m_scheduler->threadCreate(thread_id);
    if (core_id != INVALID_CORE_ID)
    {

@@ -153,6 +153,8 @@ void Simulator::start()
    m_rtn_tracer = RoutineTracer::create();
    m_thread_manager = new ThreadManager();
    m_comm_tracer = new CommTracer();
+   // memory tracker needs PIN only version
+   //m_memory_tracker = new MemoryTracker();
 
    if (Sim()->getCfg()->getBool("traceinput/enabled"))
       m_trace_manager = new TraceManager();

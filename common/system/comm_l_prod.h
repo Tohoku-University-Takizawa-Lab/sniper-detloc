@@ -24,6 +24,11 @@ public:
     mutable IntPtr m_First_addr;
     mutable IntPtr m_Second_addr;
 
+    CommLProdCons():
+        m_Line(0), m_First(0), m_Second(0), m_First_addr(0),
+        m_Second_addr(0) {
+    }
+
     CommLProdCons(IntPtr line):
         m_Line(line), m_First(0), m_Second(0), m_First_addr(0),
         m_Second_addr(0) {
@@ -52,18 +57,33 @@ public:
         return m_Second_addr;
     }
     void setEmpty() {
-        m_Line = 0;
+        setLine(0);
     }
     bool isEmpty() {
         return (m_Line == 0);
     }
+    void setLine(IntPtr line) {
+        m_Line = line;
+    }
 };
+
+// class for hash function 
+class CommLProdHash { 
+public: 
+    // id is returned as hash function 
+    size_t operator()(const CommLProdCons& c) const
+    { 
+        return std::hash<unsigned long>{}(c.m_Line); 
+        //return c.m_Line; 
+    } 
+}; 
 
 class CommLProdConsSet {
 private:
     Lock m_set_lock;
+    //boost::shared_mutex mutex_;
     std::set<CommLProdCons> setCommLPS;
-    //std::unordered_set<CommL> setCommL;
+    //std::unordered_set<CommLProdCons, CommLProdHash> setCommLPS;
     //std::vector<CommLWin *> lineWindows;
 
 public:

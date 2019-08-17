@@ -1,24 +1,30 @@
 #include "comm_tracer.h"
 
 #include "log.h"
-#include "config.h"
+//#include "config.h"
 #include "simulator.h"
 #include "core_manager.h"
 #include "config.hpp"
 #include "memory_manager.h"
 #include "thread_manager.h"
 #include "thread.h"
+//#include "shared_mutex.h"
 //#include "standalone_pin3.0/libsift/fixed_types.h"
 
 #include <fstream>
 #include <math.h>
 #include <unistd.h>
 
+#define NTHREADS_RES 64
+
 CommTracer::CommTracer()
-: m_num_threads(0) {
+: m_num_threads(0)
+, m_num_threads_res(NTHREADS_RES) 
+,v_nEvents()
+,v_szEvents(){
     // Check configuration parameter for comm detection
     //m_num_threads = Sim()->getThreadManager()->getNumThreads();
-    m_num_threads = Sim()->getConfig()->getApplicationCores();
+    //m_num_threads = Sim()->getConfig()->getApplicationCores();
     fname_comm_count = Sim()->getConfig()->formatOutputFileName("sim.comm_count");
     fname_comm_sz = Sim()->getConfig()->formatOutputFileName("sim.comm_size");
     fname_comm_events = Sim()->getConfig()->formatOutputFileName("sim.comm_events");
@@ -35,7 +41,11 @@ CommTracer::CommTracer()
         m_prodcons = Sim()->getCfg()->getBoolDefault("comm_tracer/producer_consumer_mode", false);
         printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes), prod/cons: %d\n",
                 m_block_size, 1 << m_block_size, m_prodcons);
-        
+
+        if (Sim()->getCfg()->hasKey("comm_tracer/num_threads_reserved")) {
+            m_num_threads_res = Sim()->getCfg()->getInt("comm_tracer/num_threads_reserved");
+        }
+
         // Enable timestamp traces
         m_trace_comm_events = Sim()->getCfg()->getBoolDefault("comm_tracer/trace_time", false);
         if (m_trace_comm_events) {
@@ -55,9 +65,11 @@ CommTracer::CommTracer()
         m_trace_comm_four = Sim()->getCfg()->getBoolDefault("comm_tracer/four_win_mode", false);
         if (m_trace_comm_four)
             printf("[DeTLoc] Using four window size for the tracing\n");
-        //init();
         // Pause tracing on startup, the simulator or ROI will resume it as necessary
         setPaused(true);
+        
+        // INITIALIZATION method 
+        init();
     }
     m_trace_t_lats = Sim()->getCfg()->getBoolDefault("comm_tracer/latency_trace_enable", false);
     if (m_trace_t_lats)
@@ -73,6 +85,18 @@ CommTracer::init() {
     }
      */
     //m_commLine.initZeros(m_max_block);
+   thread_id_t i;
+   struct TMemAccessCtr c = {0, 0, 0, 0, 0};
+   threadMemAccesses.resize(m_num_threads_res, c);
+   for (i = 0; i < m_num_threads_res; ++i)
+        threadMemAccesses[i].tid = i;
+
+   v_comm_matrix.resize(m_num_threads_res);
+   v_comm_sz_matrix.resize(m_num_threads_res);   
+   for (i = 0; i < m_num_threads_res; ++i) {
+        v_comm_matrix[i].resize(m_num_threads_res, 0);
+        v_comm_sz_matrix[i].resize(m_num_threads_res, 0);
+   }
 }
 
 void
@@ -94,9 +118,10 @@ CommTracer::fini() {
             //m_flushStopped = true;
             print_comm_events();
         }
+        print_mem();
     }
-    if (m_trace_t_lats)
-        print_t_lats();
+    //if (m_trace_t_lats)
+    //    print_t_lats();
     if (m_trace_mem)
         print_mem();
 }
@@ -107,8 +132,8 @@ CommTracer::inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize,
     // Also check if two threads precisely access the same address
     thread_id_t r_b = b - 1;
     if (a_addr == b_addr && a != r_b && b_w_op == true && a_w_op == false) {
-        comm_matrix[a][r_b] += 1;
-        comm_sz_matrix[a][r_b] += dsize;
+        v_comm_matrix[a][r_b] += 1;
+        v_comm_sz_matrix[a][r_b] += dsize;
         //if (b_w_op == true) {
         //std::cout << "** Pair(" << a << "," << b << "), a_addr=" << a_addr 
         //          << ", b_addr=" << b_addr << ", a_op=" << a_w_op << ", b_op=" << b_w_op << std::endl;
@@ -118,11 +143,17 @@ CommTracer::inc_comm(thread_id_t a, thread_id_t b, UInt32 dsize,
 
 void
 CommTracer::inc_comm_prod(thread_id_t a, thread_id_t b, UInt32 dsize) {
+    /*
     thread_id_t r_b = b - 1;
     if (a != r_b) {
-        comm_matrix[a][r_b] += 1;
-        comm_sz_matrix[a][r_b] += dsize;
+        //comm_matrix[a][r_b] += 1;
+        //comm_sz_matrix[a][r_b] += dsize;
+        v_comm_matrix[a][r_b] += 1;
+        v_comm_sz_matrix[a][r_b] += dsize;
     }
+    */
+    v_comm_matrix[a][b-1]++;
+    v_comm_sz_matrix[a][b-1] += dsize;
 }
 
 
@@ -131,8 +162,8 @@ CommTracer::inc_comm_f(thread_id_t a, thread_id_t b, UInt32 dsize,
         IntPtr a_addr, IntPtr b_addr) {
     thread_id_t r_b = b - 1;
     if (a_addr == b_addr && a != r_b) {
-        comm_matrix[a][r_b] += 1;
-        comm_sz_matrix[a][r_b] += dsize;
+        v_comm_matrix[a][r_b] += 1;
+        v_comm_sz_matrix[a][r_b] += dsize;
     }
 }
 
@@ -168,15 +199,23 @@ CommTracer::print_comm() {
     f.open(fname_comm_count.c_str());
     f_sz.open(fname_comm_sz.c_str());
 
-    UInt32 i = m_num_threads;
+    thread_id_t i, j;
+    
+    // Clear diagonals
+    for (i = 0; i < m_num_threads; ++i)
+        v_comm_matrix[i][i] = v_comm_sz_matrix[i][i] = 0;
+    
+    i = m_num_threads;
     while (i > 0) {
-        i--; 
-        for (UInt32 j = 0; j < m_num_threads; j++) {
+        --i; 
+        for (j = 0; j < m_num_threads; ++j) {
             //b = real_tid[j];
             //f << comm_matrix[a][b] + comm_matrix[b][a];
             //fl << comm_size_matrix[a][b] + comm_size_matrix[b][a];
-            f << comm_matrix[i][j] + comm_matrix[j][i];
-            f_sz << comm_sz_matrix[i][j] + comm_sz_matrix[j][i];
+            //f << comm_matrix[i][j] + comm_matrix[j][i];
+            //f_sz << comm_sz_matrix[i][j] + comm_sz_matrix[j][i];
+            f << v_comm_matrix[i][j] + v_comm_matrix[j][i];
+            f_sz << v_comm_sz_matrix[i][j] + v_comm_sz_matrix[j][i];
             if (j != m_num_threads - 1) {
                 f << ",";
                 f_sz << ",";
@@ -207,7 +246,7 @@ CommTracer::print_comm() {
     f_sz << std::endl;
     f.close();
     f_sz.close();
-    std::cout << "[CommTracer] Finished saving comm. matrix." << std::endl;
+    //std::cout << "[CommTracer] Finished saving comm. matrix." << std::endl;
 }
 
 void
@@ -221,14 +260,18 @@ CommTracer::add_comm_event(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 dsiz
         // Time res here, tsc is always positive
         tsc = (tsc + (m_time_res / 2)) / m_time_res;
 
-        nEvents[a][b - 1][tsc] = nEvents[a][b - 1][tsc] + 1;
-        szEvents[a][b - 1][tsc] = szEvents[a][b - 1][tsc] + dsize;
+        //nEvents[a][b - 1][tsc] = nEvents[a][b - 1][tsc] + 1;
+        //szEvents[a][b - 1][tsc] = szEvents[a][b - 1][tsc] + dsize;
+        v_nEvents[a][b - 1][tsc] += 1;
+        v_szEvents[a][b - 1][tsc] += dsize;
+        //auto updatefn = [](TPayload &tp) { tp.update(dsize); };
         //auto updatefn = [](TPayload &tp) { tp.update(dsize); };
         //int curr_count = pairEvents[a][b].find(tsc);
         //pairEvents[a][b].upsert(tsc, updatefn, new TPayload(1, dsize));
         //timeEventMap[a][b][tsc].size = timeEventMap[a][b][tsc].size + dsize;
         //timeEventMap[a][b][tsc].count = timeEventMap[a][b][tsc].count + 1;
-        if (m_flushInterval > 0 && nEvents[a][b - 1].size() >= m_flushInterval) {
+        //if (m_flushInterval > 0 && nEvents[a][b - 1].size() >= m_flushInterval) {
+        if (m_flushInterval > 0 && v_nEvents[a][b - 1].size() >= m_flushInterval) {
             flush_thread_events(a, b - 1);
         }
     }
@@ -243,10 +286,14 @@ CommTracer::add_comm_event_f(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 ds
         //if (m_time_res > 1)
         tsc = (tsc + (m_time_res / 2)) / m_time_res;
 
-        nEvents[a][r_b][tsc] = nEvents[a][r_b][tsc] + 1;
-        szEvents[a][r_b][tsc] = szEvents[a][r_b][tsc] + dsize;
+        //nEvents[a][r_b][tsc] = nEvents[a][r_b][tsc] + 1;
+        //szEvents[a][r_b][tsc] = szEvents[a][r_b][tsc] + dsize;
+        v_nEvents[a][r_b][tsc] += 1;
+        v_szEvents[a][r_b][tsc] += dsize;
        
-        if (m_flushInterval > 0 && nEvents[a][r_b].size() >= m_flushInterval) {
+       
+        //if (m_flushInterval > 0 && nEvents[a][r_b].size() >= m_flushInterval) {
+        if (m_flushInterval > 0 && v_nEvents[a][r_b].size() >= m_flushInterval) {
             flush_thread_events(a, r_b);
         }
     }
@@ -254,11 +301,6 @@ CommTracer::add_comm_event_f(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 ds
 
 void
 CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize, bool w_op) {
-    if (m_trace_mem) {
-        threadsMemAccesses[tid] += 1;
-        threadsMemSizes[tid] += dsize;
-    }
-
     if (m_trace_comm && !m_paused) {
         IntPtr line = addr >> m_block_size;
         //std::cout << "** thread-" << tid << ", addr=" << addr << ", line=" << line << std::endl;
@@ -426,19 +468,30 @@ void CommTracer::trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize
         UInt32 n_line = 1 + (dsize >> m_block_size);
         //printf("[L-%ld] WRITE: %d, n_line: %d\n", line, dsize, n_line);
         m_commLPS.updateCreateLineBatch(line, n_line, tid+1, addr);
+        updateThreadMemWrites(tid, dsize);
     }
     else {
         CommLProdCons clps = m_commLPS.getLineLazy(line);
         if (clps.isEmpty() == false) {
-            if (clps.getSecond_addr() != 0 && clps.getSecond_addr() <= addr) {
+            /*
+            if (clps.getSecond_addr() != 0 && clps.getSecond_addr() <= addr && tid != clps.getSecond()-1) {
                 inc_comm_prod(tid, clps.getSecond(), dsize);
                 //printf("[L-%ld] READ: %d, tid: %d, b: %d\n", line, dsize, tid, clps.getSecond());
             }
-            else if (clps.getFirst_addr() <= addr) {
+            else if (clps.getFirst_addr() <= addr && tid != clps.getFirst()-1) {
                 inc_comm_prod(tid, clps.getFirst(), dsize);
                 //printf("[L-%ld] READ: %d, tid: %d, a: %d\n", line, dsize, tid, clps.getFirst());
             }
+            */
+            // First is the most recent one
+            if (clps.getFirst_addr() <= addr && tid != clps.getFirst()-1) {
+                inc_comm_prod(tid, clps.getFirst(), dsize);
+            }
+            else if (tid != clps.getSecond()-1) {
+                inc_comm_prod(tid, clps.getSecond(), dsize);
+            }
         }
+        updateThreadMemReads(tid, dsize);
     }
 }
 
@@ -536,10 +589,12 @@ CommTracer::print_comm_events() {
     //String fname_accu = "sim.comm-events";
     //int num_threads = Sim()->getConfig()->getApplicationCores();
     //int i, j, l, r;
-    UInt32 i, j, l, r;
+    thread_id_t i, j, l, r;
 
-    std::cout << "Print communication events: " << fname_comm_events << std::endl;
-    //std::unordered_map<UInt64, TPayload> accums[COMM_MAXTHREADS + 1][COMM_MAXTHREADS + 1];
+    std::cout << "[CommTracer] Saving communication events: " << fname_comm_events << std::endl;
+    
+    // Create temporary map for accumulating events
+    std::vector<std::vector<std::unordered_map<UInt64, TComm>>> accums;
 
     i = m_num_threads;
     while (i > 0) {
@@ -551,7 +606,8 @@ CommTracer::print_comm_events() {
             while (isFlushing[i])
                 sleep(1000);
 
-            for (auto it : nEvents[i][j]) {
+            //for (auto it : nEvents[i][j]) {
+            for (auto it : v_nEvents[i][j]) {
                 // Accumulate the pairs with just a different order
                 // Pair of (T1,T2) is considered same with (T2,T1)
                 if (i < j) {
@@ -570,7 +626,8 @@ CommTracer::print_comm_events() {
                 accums[l][r][it.first].count = accums[l][r][it.first].count +
                         it.second;
                 accums[l][r][it.first].size = accums[l][r][it.first].size +
-                        szEvents[i][j][it.first];
+                        v_szEvents[i][j][it.first];
+                        //szEvents[i][j][it.first];
             }
         }
     }
@@ -627,6 +684,7 @@ CommTracer::rec_core_dram_lat(core_id_t core_id, UInt64 lat, UInt32 data_len, UI
     }
 }
 
+/*
 void
 CommTracer::rec_t_qdelay(thread_id_t tid, UInt64 q_delay, UInt64 ts) {
     if (m_trace_t_lats) {
@@ -690,6 +748,7 @@ CommTracer::print_t_lats() {
         std::cerr << "Failed opening file: " << strerror(errno) << std::endl;
     }
 }
+*/
 
 void CommTracer::print_mem() {
     //int i;
@@ -697,16 +756,19 @@ void CommTracer::print_mem() {
     //String fname = "sim.mem-accesses";
     //int num_threads = Sim()->getConfig()->getApplicationCores();
 
-    std::cout << "Print thread's mem access: " << fname_mem_access << std::endl;
+    std::cout << "[CommTracer] Printing mem. access counter: " << fname_mem_access << std::endl;
 
     //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
     f.open(fname_mem_access.c_str());
     if (f.is_open()) {
 
-        f << "tid,n_access,sz_access\n";
-        for (UInt32 i = 0; i < m_num_threads; i++) {
-            f << i << ',' << threadsMemAccesses[i] << ',' << threadsMemSizes[i]
-                    << std::endl;
+        f << "tid,n_reads,n_writes,sz_reads,sz_writes\n";
+        for (thread_id_t i = 0; i < m_num_threads; i++) {
+            //f << i << ',' << threadsMemAccesses[i] << ',' << threadsMemSizes[i]
+            //        << std::endl;
+            f << threadMemAccesses[i].tid << ',' << threadMemAccesses[i].nReads << ','
+                << threadMemAccesses[i].nWrites << ',' << threadMemAccesses[i].szReads 
+                << ',' << threadMemAccesses[i].szWrites << std::endl;
         }
         f.close();
     } else {
@@ -735,21 +797,75 @@ void CommTracer::flush_thread_events(thread_id_t t1, thread_id_t t2) {
     //std::cout << "Flush events[ " << t1 << "][" << t2 << ']' << std::endl;
     //f.open(ss.str(), std::ios::app);
     if (f.is_open()) {
-        for (auto it : nEvents[t1][t2]) {
+        //for (auto it : nEvents[t1][t2]) {
+        for (auto it : v_nEvents[t1][t2]) {
             f << t1 << ',' << t2 << ',' << it.first << ','
                     << it.second << ","
-                    << szEvents[t1][t2][it.first] << '\n';
+                    << v_szEvents[t1][t2][it.first] << '\n';
+                    //<< szEvents[t1][t2][it.first] << '\n';
         }
         f.close();
         // Clear the flushed events
         //threadLocks[t1].acquire();
         isFlushing[t1] = true;
-        nEvents[t1][t2].clear();
-        szEvents[t1][t2].clear();
+        //nEvents[t1][t2].clear();
+        v_nEvents[t1][t2].clear();
+        //szEvents[t1][t2].clear();
+        v_szEvents[t1][t2].clear();
         isFlushing[t1] = false;
         //threadLocks[t2].release();
     } else {
         std::cerr << "Failed opening file: " << strerror(errno) << std::endl;
     }
+}
+
+void CommTracer::incNumThreads(thread_id_t tid) {
+    if (tid >= m_num_threads_res)
+    {
+      if (m_trace_comm) {
+        // Init mem access ctr
+        struct TMemAccessCtr c;
+        c.tid = tid;
+        c.nReads = c.nWrites = c.szReads = c.szWrites = 0;
+        threadMemAccesses.push_back(c);
+
+        // Init matrix size
+        // Enlarge columns of existing rows
+        for (thread_id_t i = 0; i < m_num_threads; ++i) {
+            v_comm_matrix[i].push_back(0); 
+            v_comm_sz_matrix[i].push_back(0); 
+        }
+        // Add new row
+        std::vector<UInt64> v_peers(m_num_threads+1);
+        v_comm_matrix.push_back(v_peers);
+        std::vector<UInt64> v_sz_peers(m_num_threads+1);
+        v_comm_sz_matrix.push_back(v_sz_peers);
+      }
+    
+      if (m_trace_comm_events) {
+        for (thread_id_t i = 0; i < m_num_threads; ++i) {
+            std::unordered_map<UInt64, UInt32> nMap;
+            std::unordered_map<UInt64, UInt32> szMap;
+
+            v_nEvents[i].push_back(nMap);
+            v_szEvents[i].push_back(szMap);
+        }
+        std::vector<std::unordered_map<UInt64, UInt32>> v_peers(m_num_threads+1);
+        v_nEvents.push_back(v_peers);
+        std::vector<std::unordered_map<UInt64, UInt32>> v_sz_peers(m_num_threads+1);
+        v_szEvents.push_back(v_sz_peers);
+      }
+    }
+    m_num_threads++;
+}
+
+void CommTracer::updateThreadMemWrites(thread_id_t tid, UInt32 dsize) {
+    threadMemAccesses[tid].nWrites++;
+    threadMemAccesses[tid].szWrites += dsize;
+}
+
+void CommTracer::updateThreadMemReads(thread_id_t tid, UInt32 dsize) {
+    threadMemAccesses[tid].nReads++;
+    threadMemAccesses[tid].szReads += dsize;
 }
 

@@ -73,10 +73,12 @@ void CommLProdConsSet::updateCreateLine(IntPtr line, thread_id_t tid, IntPtr add
     }
 }
 
+/*
 void CommLProdConsSet::updateCreateLineBatch(IntPtr start, UInt32 len,
         thread_id_t tid, IntPtr addr) {
     for (IntPtr line = start; line < start+len; ++line) {
         CommLProdCons cand = CommLProdCons(line);
+        //ScopedReadLock sl(getLock());
         auto it = setCommLPS.find(cand);
         if (it == setCommLPS.end()) {
             // Not found, new insertion
@@ -89,6 +91,80 @@ void CommLProdConsSet::updateCreateLineBatch(IntPtr start, UInt32 len,
         }
     }
 }
+*/
+
+void CommLProdConsSet::updateCreateLineBatch(IntPtr start, UInt32 len,
+        thread_id_t tid, IntPtr addr) {
+    CommLProdCons cand = CommLProdCons();
+    cand.update(tid, addr);
+    for (IntPtr line = start; line < start+len; ++line) {
+        cand.setLine(line);
+        //ScopedReadLock sl(getLock());
+        auto it = setCommLPS.find(cand);
+        if (it == setCommLPS.end()) {
+            // Not found, new insertion
+            //cand.update(tid, addr);
+            ScopedLock sl(getLock());
+            setCommLPS.insert(cand);
+        }
+        else if (tid != (*it).m_First) {
+            const_cast<CommLProdCons&>(*it).update(tid, addr);
+        }
+    }
+    //printf("[DetLoc] current line size: %ld\n", setCommLPS.size());
+}
+
+/*
+void CommLProdConsSet::updateCreateLineBatch(IntPtr start, UInt32 len,
+        thread_id_t tid, IntPtr addr) {
+    std::vector<CommLProdCons> buff;
+    for (IntPtr line = start; line < start+len; ++line) {
+        CommLProdCons cand = CommLProdCons(line);
+        //ScopedReadLock sl(getLock());
+        auto it = setCommLPS.find(cand);
+        if (it == setCommLPS.end()) {
+            // Not found, new insertion
+            cand.update(tid, addr);
+            //ScopedLock sl(getLock());
+            //setCommLPS.insert(cand);
+            buff.push_back(cand);
+        }
+        else if (tid != (*it).m_First) {
+            const_cast<CommLProdCons&>(*it).update(tid, addr);
+        }
+    }
+    if (!buff.empty()) {
+        ScopedLock sl(getLock());
+        setCommLPS.insert(buff.begin(), buff.end());
+    }
+}
+*/
+/*
+void CommLProdConsSet::updateCreateLineBatch(IntPtr start, UInt32 len,
+        thread_id_t tid, IntPtr addr) {
+    CommLProdCons cand = CommLProdCons(start);
+    auto it = setCommLPS.find(cand);
+    if (it == setCommLPS.end()) {
+        cand.update(tid, addr);
+        ScopedLock sl(getLock());
+        setCommLPS.insert(cand);
+        for (IntPtr line = start+1; line < start+len; ++line) {
+            cand.setLine(line);
+            setCommLPS.insert(cand);
+        }
+    }
+    else {
+        const_cast<CommLProdCons&>(*it).update(tid, addr);
+        for (IntPtr line = start+1; line < start+len; ++line) {
+            cand.setLine(line);
+            auto it = setCommLPS.find(cand);
+            if (it != setCommLPS.end()) {
+                const_cast<CommLProdCons&>(*it).update(tid, addr);
+            }
+        }
+    }
+}
+*/
 
 void CommLProdConsSet::updateLineLazy(IntPtr line, thread_id_t tid, IntPtr addr) {
     CommLProdCons cand = CommLProdCons(line);

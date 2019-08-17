@@ -25,7 +25,7 @@ void DramCntlrInterface::handleMsgFromTagDirectory(core_id_t sender, PrL1PrL2Dra
          boost::tie(dram_latency, hit_where) = getDataFromDram(address, shmem_msg->getRequester(), data_buf, msg_time, shmem_msg->getPerf());
 
          // CommTracer: comm_tracer.cc
-         Sim()->getCommTracer()->rec_core_dram_lat(sender, dram_latency.getNS(), getCacheBlockSize(), msg_time.getNS());
+         //Sim()->getCommTracer()->rec_core_dram_lat(sender, dram_latency.getNS(), getCacheBlockSize(), msg_time.getNS());
          
          getShmemPerfModel()->incrElapsedTime(dram_latency, ShmemPerfModel::_SIM_THREAD);
 

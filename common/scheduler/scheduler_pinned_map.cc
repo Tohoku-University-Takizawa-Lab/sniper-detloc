@@ -10,6 +10,7 @@ SchedulerPinnedMap::SchedulerPinnedMap(ThreadManager *thread_manager)
    : SchedulerPinnedBase(thread_manager, SubsecondTime::NS(Sim()->getCfg()->getInt("scheduler/pinned/quantum")))
    , m_interleaving(Sim()->getCfg()->getInt("scheduler/pinned/interleaving"))
    , m_next_core(0)
+   , threadCoreMap()
 {
    m_core_mask.resize(Sim()->getConfig()->getApplicationCores());
 
@@ -112,7 +113,8 @@ bool SchedulerPinnedMap::loadMap(const String &filename) // Read process-to-core
 
 void SchedulerPinnedMap::printMap()
 {
-    for(tcMap::const_iterator iter= threadCoreMap.begin(); iter!=threadCoreMap.end(); ++iter)
+    //for(tcMap::const_iterator iter= threadCoreMap.begin(); iter!=threadCoreMap.end(); ++iter)
+    for(std::map<thread_id_t, core_id_t>::const_iterator iter= threadCoreMap.begin(); iter!=threadCoreMap.end(); ++iter)
     {
         cout <<iter->first<<":"<<iter->second;
         cout<<"\n";
@@ -120,6 +122,6 @@ void SchedulerPinnedMap::printMap()
 }
 
 SchedulerPinnedMap::~SchedulerPinnedMap() {
-    delete &threadCoreMap;
+    //delete &threadCoreMap;
 }
 

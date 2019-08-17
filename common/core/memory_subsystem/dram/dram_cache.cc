@@ -142,7 +142,7 @@ DramCache::doAccess(Cache::access_t access, IntPtr address, core_id_t requester,
          latency += dram_latency;
          
          // CommTracer: comm_tracer.cc
-         Sim()->getCommTracer()->rec_core_dram_lat(m_core_id, dram_latency.getNS(), getCacheBlockSize(), now.getNS());
+         //Sim()->getCommTracer()->rec_core_dram_lat(m_core_id, dram_latency.getNS(), getCacheBlockSize(), now.getNS());
       }
          // For STOREs, we only do complete cache lines so we don't need to read from DRAM
 
@@ -232,7 +232,7 @@ DramCache::callPrefetcher(IntPtr train_address, bool cache_hit, bool prefetch_hi
             ++m_prefetches;
             
             // CommTracer: comm_tracer.cc
-            Sim()->getCommTracer()->rec_core_dram_lat(m_core_id, dram_latency.getNS(), getCacheBlockSize(), t_issue.getNS());
+            //Sim()->getCommTracer()->rec_core_dram_lat(m_core_id, dram_latency.getNS(), getCacheBlockSize(), t_issue.getNS());
          }
       }
    }

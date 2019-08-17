@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 
-typedef std::map<thread_id_t, core_id_t> tcMap;
+//typedef std::map<thread_id_t, core_id_t> tcMap;
 
 class SchedulerPinnedMap : public SchedulerPinnedBase
 {
@@ -25,7 +25,8 @@ class SchedulerPinnedMap : public SchedulerPinnedBase
       std::vector<bool> m_core_mask;
 
       core_id_t m_next_core;
-	  tcMap threadCoreMap;
+	  //tcMap threadCoreMap;
+	  std::map<thread_id_t, core_id_t> threadCoreMap;
 };
 
 #endif // __SCHEDULER_ROAMING_H
