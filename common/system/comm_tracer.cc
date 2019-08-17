@@ -487,7 +487,7 @@ void CommTracer::trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize
             if (clps.getFirst_addr() <= addr && tid != clps.getFirst()-1) {
                 inc_comm_prod(tid, clps.getFirst(), dsize);
             }
-            else if (tid != clps.getSecond()-1) {
+            else if (clps.getSecond() != 0 && tid != clps.getSecond()-1) {
                 inc_comm_prod(tid, clps.getSecond(), dsize);
             }
         }
