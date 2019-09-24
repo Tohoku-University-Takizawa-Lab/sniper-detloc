@@ -277,6 +277,8 @@ private:
 
     thread_id_t m_num_threads;
     thread_id_t m_num_threads_res;
+    // Skip every n access to speed up tracing
+    int m_num_skips;
     /*
     struct TIDlist {
         thread_id_t first;
@@ -326,6 +328,9 @@ private:
     //std::unordered_map<UInt64, UInt32> nEvents[COMM_MAXTHREADS + 1][COMM_MAXTHREADS + 1];
     std::vector<std::vector<std::unordered_map<UInt64, UInt32>>> v_nEvents;
     std::vector<std::vector<std::unordered_map<UInt64, UInt32>>> v_szEvents;
+    
+    // Skip counters
+    std::vector<int> threadSkipCounters;
     
     //std::unordered_map<UInt64, UInt32> nEvents[COMM_MAXTHREADS + 1][COMM_MAXTHREADS + 1];
 

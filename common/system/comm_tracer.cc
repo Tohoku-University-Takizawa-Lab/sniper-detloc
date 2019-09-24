@@ -20,6 +20,7 @@
 CommTracer::CommTracer()
 : m_num_threads(0)
 , m_num_threads_res(NTHREADS_RES) 
+, m_num_skips(0)
 ,v_nEvents()
 ,v_szEvents(){
     // Check configuration parameter for comm detection
@@ -45,7 +46,11 @@ CommTracer::CommTracer()
         if (Sim()->getCfg()->hasKey("comm_tracer/num_threads_reserved")) {
             m_num_threads_res = Sim()->getCfg()->getInt("comm_tracer/num_threads_reserved");
         }
-
+        if (Sim()->getCfg()->hasKey("comm_tracer/skip_every_n")) {
+            m_num_skips = Sim()->getCfg()->getInt("comm_tracer/skip_every_n");
+            printf("[DeTLoc] Sample limiter is enabled, will skip for every %d accesses\n", m_num_skips);
+        }
+        
         // Enable timestamp traces
         m_trace_comm_events = Sim()->getCfg()->getBoolDefault("comm_tracer/trace_time", false);
         if (m_trace_comm_events) {
@@ -97,6 +102,8 @@ CommTracer::init() {
         v_comm_matrix[i].resize(m_num_threads_res, 0);
         v_comm_sz_matrix[i].resize(m_num_threads_res, 0);
    }
+  
+   threadSkipCounters.resize(m_num_threads_res, 0);
 }
 
 void
@@ -302,6 +309,16 @@ CommTracer::add_comm_event_f(thread_id_t a, thread_id_t b, UInt64 tsc, UInt32 ds
 void
 CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize, bool w_op) {
     if (m_trace_comm && !m_paused) {
+        // Skip counters
+        if (m_num_skips > 0) {
+            if ( (w_op == true && threadSkipCounters[tid] < m_num_skips-1)
+                || (w_op == false && threadSkipCounters[tid] < m_num_skips) ) {
+                ++threadSkipCounters[tid];
+                return;
+            }
+            threadSkipCounters[tid] = 0;
+        }
+    
         IntPtr line = addr >> m_block_size;
         //std::cout << "** thread-" << tid << ", addr=" << addr << ", line=" << line << std::endl;
         if (m_trace_comm_events == false && m_prodcons == true)
@@ -828,6 +845,7 @@ void CommTracer::incNumThreads(thread_id_t tid) {
         c.tid = tid;
         c.nReads = c.nWrites = c.szReads = c.szWrites = 0;
         threadMemAccesses.push_back(c);
+        threadSkipCounters.push_back(0);
 
         // Init matrix size
         // Enlarge columns of existing rows
