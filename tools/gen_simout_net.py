@@ -224,8 +224,13 @@ def generate_simout(jobid = None, resultsdir = None, partial = None, output = sy
     sum(results['performance_model.ipc'])/ncores if c == 0 else float('inf')
     for c in range(ncores)
   ]
-  results['walltime_total'] = [
-    results['walltime'] if c == 0 else float('inf')
+  if 'walltime' in results:  #walltime only exists after sim.info is generated (after this script is called)
+    results['walltime_total'] = [
+        results['walltime'] if c == 0 else float('inf')
+        for c in range(ncores)
+    ]
+  results['walltime_roi'] = [
+    results['roi.walltime'] if c == 0 else float('inf')
     for c in range(ncores)
   ]
   #print(results['walltime'])
@@ -236,10 +241,11 @@ def generate_simout(jobid = None, resultsdir = None, partial = None, output = sy
         ('  average IPC', 'performance_model.ipc_avg' , format_float(2)),
         ('  elapsed time (ms)', 'performance_model.elapsed_time' , format_ms(0)),
         ('  max elapsed time (ms)', 'performance_model.elapsed_time_max' , format_ms(0)),
-        ('  simulation time (s)', 'walltime_total', format_float(1)),
+        ('  ROI walltime (s)', 'walltime_roi', format_float(1)),
+        ('  Simulation time (s)', 'walltime_total', format_float(1)),
      ])
 
-  #print(results.keys())
+  print(results.keys())
 
   lines = []
   lines.append([''] + [ 'Core %u' % i for i in range(ncores) ])
