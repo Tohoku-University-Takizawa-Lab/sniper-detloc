@@ -220,6 +220,10 @@ def generate_simout(jobid = None, resultsdir = None, partial = None, output = sy
     max(results['performance_model.elapsed_time']) if c == 0 else float('inf')
     for c in range(ncores)
   ]
+  results['performance_model.ipc_avg'] = [
+    sum(results['performance_model.ipc'])/ncores if c == 0 else float('inf')
+    for c in range(ncores)
+  ]
   results['walltime_total'] = [
     results['walltime'] if c == 0 else float('inf')
     for c in range(ncores)
@@ -229,6 +233,7 @@ def generate_simout(jobid = None, resultsdir = None, partial = None, output = sy
   if 'performance_model.elapsed_time' in results:
       template.extend([
         ('Execution time summary', '', ''),
+        ('  average IPC', 'performance_model.ipc_avg' , format_float(2)),
         ('  elapsed time (ms)', 'performance_model.elapsed_time' , format_ms(0)),
         ('  max elapsed time (ms)', 'performance_model.elapsed_time_max' , format_ms(0)),
         ('  simulation time (s)', 'walltime_total', format_float(1)),
