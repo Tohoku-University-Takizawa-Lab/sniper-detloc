@@ -2,6 +2,8 @@
 #include "cache.h"
 #include "log.h"
 
+#include <fstream>
+
 // Cache class
 // constructors/destructors
 Cache::Cache(
@@ -22,6 +24,10 @@ Cache::Cache(
    m_num_accesses(0),
    m_num_hits(0),
    m_cache_type(cache_type),
+   m_sets_misses(),
+   m_sets_hits(),
+   m_name(name),
+   m_core_id(core_id),
    m_fault_injector(fault_injector)
 {
    m_set_info = CacheSet::createCacheSetInfo(name, cfgname, core_id, replacement_policy, m_associativity);
@@ -29,6 +35,8 @@ Cache::Cache(
    for (UInt32 i = 0; i < m_num_sets; i++)
    {
       m_sets[i] = CacheSet::createCacheSet(cfgname, core_id, replacement_policy, m_cache_type, m_associativity, m_blocksize, m_set_info);
+      m_sets_misses[i] = 0;
+      m_sets_hits[i] = 0;
    }
 
    #ifdef ENABLE_SET_USAGE_HIST
@@ -48,12 +56,42 @@ Cache::~Cache()
    delete [] m_set_usage_hist;
    #endif
 
+   if (m_cache_type == SHARED_CACHE)
+   {
+        char fname[64];
+        std::ofstream f;
+        
+        String fname_sim = Sim()->getConfig()->formatOutputFileName("sim.cache_sets");
+        sprintf(fname, "%s.core-%d.%s", fname_sim.c_str(), m_core_id, m_name.c_str());
+        //fname = fname + ".core-" + std::to_string(m_core_id) + ".cache-" + m_name; 
+
+        f.open(fname);
+        if (f.is_open())
+        {
+            for(UInt64 set_index = 0; set_index < m_sets_misses.size(); ++set_index)
+            {
+                f << set_index << "," << m_sets_hits[set_index] << "," 
+                        << m_sets_misses[set_index] << std::endl;
+            }
+            /*
+            printf("[m_sets_misses] core-%d, name: %s\n", m_core_id, m_name.c_str());
+            for(UInt64 set_index = 0; set_index < m_sets_misses.size(); ++set_index)
+            {
+                std::cout << set_index << ": " << m_sets_misses[set_index] << ", ";
+            }
+            std::cout << std::endl;
+            */
+            f.close();
+        }
+   }
+
    if (m_set_info)
       delete m_set_info;
 
    for (SInt32 i = 0; i < (SInt32) m_num_sets; i++)
       delete m_sets[i];
    delete [] m_sets;
+   
 }
 
 Lock&
@@ -161,7 +199,26 @@ Cache::peekSingleLine(IntPtr addr)
    UInt32 set_index;
    splitAddress(addr, tag, set_index);
 
-   return m_sets[set_index]->find(tag);
+   //return m_sets[set_index]->find(tag);
+   CacheBlockInfo * info = m_sets[set_index]->find(tag);
+   
+   //printf("Check misses on %d\n", set_index);
+   if (m_cache_type == SHARED_CACHE)
+   {
+        if (info == NULL)
+        {
+            // Update misses counter
+            m_sets_misses[set_index]++;
+            //printf("Miss on set %d\n", set_index);
+        }
+        else
+        {
+            m_sets_hits[set_index]++;
+        }
+   }
+   
+   return info;
+   
 }
 
 void

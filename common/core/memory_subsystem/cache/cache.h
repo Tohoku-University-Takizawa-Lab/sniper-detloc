@@ -12,6 +12,8 @@
 #include "core.h"
 #include "fault_injection.h"
 
+#include <unordered_map>
+
 // Define to enable the set usage histogram
 //#define ENABLE_SET_USAGE_HIST
 
@@ -28,6 +30,11 @@ class Cache : public CacheBase
       cache_t m_cache_type;
       CacheSet** m_sets;
       CacheSetInfo* m_set_info;
+      
+      std::unordered_map<UInt32, UInt32> m_sets_misses;
+      std::unordered_map<UInt32, UInt32> m_sets_hits;
+      String m_name;
+      core_id_t m_core_id;
 
       FaultInjector *m_fault_injector;
 
