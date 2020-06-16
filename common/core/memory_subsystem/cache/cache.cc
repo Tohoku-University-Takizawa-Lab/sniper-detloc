@@ -58,7 +58,7 @@ Cache::~Cache()
 
    if (m_cache_type == SHARED_CACHE)
    {
-        char fname[64];
+        char fname[255];
         std::ofstream f;
         
         String fname_sim = Sim()->getConfig()->formatOutputFileName("sim.cache_sets");
@@ -82,6 +82,7 @@ Cache::~Cache()
             std::cout << std::endl;
             */
             f.close();
+            
         }
    }
 
