@@ -56,6 +56,7 @@ CommL CommLSet::getLine(IntPtr line) {
     CommL cand_cl = CommL(line);
     //CommL *cand_cl = new CommL(line);
     //setLock.acquire_read();
+    //ScopedLock sl(getLock());
     auto it = setCommL.find(cand_cl);
     //setLock.release();
     if (it != setCommL.end()) {
@@ -65,7 +66,7 @@ CommL CommLSet::getLine(IntPtr line) {
     else {
         CommL new_cl = CommL(line);
         //CommL *new_cl = new CommL(line);
-        //setLock.acquire();
+            //setLock.acquire();
         ScopedLock sl(getLock());
         auto result = setCommL.insert(new_cl);
         //setLock.release();
@@ -76,6 +77,7 @@ CommL CommLSet::getLine(IntPtr line) {
 void CommLSet::updateLine(IntPtr line, thread_id_t tid, IntPtr addr, bool w_op) {
     CommL cand_cl = CommL(line);
     auto it = setCommL.find(cand_cl);
+    // To-Do: segfault sometimes becaused find() can return invalid pointer
     const_cast<CommL&>(*it).update(tid, addr, w_op);
 }
 
@@ -149,4 +151,58 @@ CommL CommLSet::getLine(UInt64 line) {
     }
 }
 */
+
+CommLMap::CommLMap()
+: mapCommL()
+, locks(LOCK_POOL_SIZE+1) {
+}
+
+CommLMap::~CommLMap() {
+}
+
+bool CommLMap::exists(IntPtr line) {
+    return (mapCommL.count(line) != 0);
+}
+
+CommL CommLMap::getLine(IntPtr line) {
+    //CommL cand_cl = CommL(line);
+    //auto it = setCommL.find(cand_cl);
+    getLock().acquire();
+//    getLock(line).acquire();
+    auto it = mapCommL.find(line);
+    getLock().release();
+//    getLock(line).release();
+    if (it != mapCommL.end()) {
+        //return (*it);
+        return it->second;
+        //return it;
+    }
+    else {
+        CommL new_cl = CommL(line);
+        //CommL *new_cl = new CommL(line);
+            //setLock.acquire();
+        ScopedLock sl(getLock());
+//        ScopedLock sl(getLock(line));
+        //auto result = setCommL.insert(new_cl);
+        auto result = mapCommL.emplace(line, new_cl);
+        //setLock.release();
+        //return (*result.first);
+        return result.first->second;
+    }
+}
+
+void CommLMap::updateLine(IntPtr line, thread_id_t tid, IntPtr addr, bool w_op) {
+    //CommL cand_cl = CommL(line);
+    //auto it = setCommL.find(cand_cl);
+    // To-Do: segfault sometimes becaused find() can return invalid pointer
+    //const_cast<CommL&>(*it).update(tid, addr, w_op);
+//    ScopedLock sl(getLock());
+//    ScopedLock sl(getLock(line));
+    //auto it = mapCommL.find(line);
+    //auto result = mapCommL.emplace(line, new_cl);
+//    getLock().acquire();
+    CommL cl = mapCommL[line];
+//   getLock().release();
+    cl.update(tid, addr, w_op);
+}
 

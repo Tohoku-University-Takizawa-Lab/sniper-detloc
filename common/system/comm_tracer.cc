@@ -21,8 +21,9 @@ CommTracer::CommTracer()
 : m_num_threads(0)
 , m_num_threads_res(NTHREADS_RES) 
 , m_num_skips(0)
+,flushLocks(COMM_MAXTHREADS+1)
 ,v_nEvents()
-,v_szEvents(){
+,v_szEvents() {
     // Check configuration parameter for comm detection
     //m_num_threads = Sim()->getThreadManager()->getNumThreads();
     //m_num_threads = Sim()->getConfig()->getApplicationCores();
@@ -40,7 +41,7 @@ CommTracer::CommTracer()
             m_max_block = Sim()->getCfg()->getInt("comm_tracer/max_block");
         }
         m_prodcons = Sim()->getCfg()->getBoolDefault("comm_tracer/producer_consumer_mode", false);
-        printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes), prod/cons: %d\n",
+        printf("[DeTLoc] Communication tracing is enabled, block_size=%lu (%d bytes), prod/cons mode: %d\n",
                 m_block_size, 1 << m_block_size, m_prodcons);
 
         if (Sim()->getCfg()->hasKey("comm_tracer/num_threads_reserved")) {
@@ -56,14 +57,14 @@ CommTracer::CommTracer()
         if (m_trace_comm_events) {
             if (Sim()->getCfg()->hasKey("comm_tracer/time_res")) {
                 m_time_res = Sim()->getCfg()->getFloat("comm_tracer/time_res");
-                if (m_time_res < 1) 
+                if (m_time_res < 1) {
                     m_time_res = 1;
-                printf("[DeTLoc] comm_tracer.time_res must be > 0, using default (1 ns).\n");
+                    printf("[DeTLoc] comm_tracer.time_res must be > 0, using default (1 ns).\n");
+                }
             }
-            printf("Communication time will be traced (resolution = %.2f ns)\n", m_time_res);
+            printf("[DeTLoc] -- Trace communication timestamps (resolution = %.2f ns)\n", m_time_res);
             m_flushInterval = Sim()->getCfg()->getFloat("comm_tracer/flush_interval");
-            printf("Comm. events will be printed every interval = %lu * %.2f ns)\n",
-                    m_flushInterval, m_time_res);
+            printf("[DeTLoc] -- Flush buffer size = %lu x time resolution\n", m_flushInterval);
             //if (m_flushInterval > 0)
             //    run_flush_thread();
         }
@@ -104,12 +105,32 @@ CommTracer::init() {
    }
   
    threadSkipCounters.resize(m_num_threads_res, 0);
+   isFlushing.resize(m_num_threads_res, false);
+        
+   if (m_trace_comm_events) {
+     for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+        for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+            std::vector<std::unordered_map<UInt64, UInt32>> v_peers(m_num_threads_res+1);
+            std::vector<std::unordered_map<UInt64, UInt32>> v_sz_peers(m_num_threads_res+1);
+            
+            for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+                std::unordered_map<UInt64, UInt32> nMap;
+                std::unordered_map<UInt64, UInt32> szMap;
+                v_peers.push_back(nMap);
+                v_sz_peers.push_back(szMap);
+            }
+            v_nEvents.push_back(v_peers);
+            v_szEvents.push_back(v_sz_peers);
+        }
+     }
+   }
 }
 
 void
 CommTracer::setPaused(bool paused) {
     m_paused = paused;
-    std::cout << "[DeTLoc] Update paused state: " << m_paused << std::endl;
+    //std::cout << "[DeTLoc] Update paused state -> " << m_paused << std::endl;
+    std::cout << "[DeTLoc] Pause tracing -> " << m_paused << std::endl;
 }
 
 CommTracer::~CommTracer() {
@@ -323,6 +344,8 @@ CommTracer::trace_comm(IntPtr addr, thread_id_t tid, UInt64 ns, UInt32 dsize, bo
         //std::cout << "** thread-" << tid << ", addr=" << addr << ", line=" << line << std::endl;
         if (m_trace_comm_events == false && m_prodcons == true)
             trace_comm_spat_prod(line, tid, dsize, addr, w_op);
+        else if (m_trace_comm_events && m_prodcons == true)
+            trace_comm_spat_tempo_prod(line, tid, ns, dsize, addr, w_op);
         else if (!m_trace_comm_events && !m_trace_comm_four)
             trace_comm_spat(line, tid, dsize, addr, w_op);
         else if (m_trace_comm_events && !m_trace_comm_four)
@@ -351,7 +374,8 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts,
     //thread_id_t b = commmap_s[line];
     //printf("(a,b)=(%d,%d)\n", a, b);
     //ThreadLine *threadLine = m_threadLines.getThreadLine(tid, line);
-    CommL comm_l = m_commLSet.getLine(line);
+//    CommL comm_l = m_commLSet.getLine(line);
+    CommL comm_l = m_commLMap.getLine(line);
 
     //thread_id_t a = m_commLine.first(line);
     //thread_id_t a = threadLine->getFirst();
@@ -366,15 +390,16 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts,
     //thread_id_t b = threadLine->getSecond();
     thread_id_t b = comm_l.getSecond();
 
-    if (a == 0 && b == 0) {
+   // if (a == 0 && b == 0) {
         // sh = 0;
         // no one accessed line before, store accessing thread in pos 0
         //commmap[line].first = tid + 1;
         //commmap_f[line] = tid;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
-        m_commLSet.updateLine(line, tid + 1, addr, w_op);
-    } else if (a != 0 && b != 0) {
+//        m_commLSet.updateLine(line, tid + 1, addr, w_op);
+    //    m_commLMap.updateLine(line, tid + 1, addr, w_op);
+    if (a != 0 && b != 0) {
         // sh = 2;
         // two previous accesses
         inc_comm(tid, a, dsize, addr, comm_l.getFirst_addr(), w_op, comm_l.getFirst_w_op());
@@ -388,7 +413,8 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts,
         //commmap_s[line] = a;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
-        m_commLSet.updateLine(line, tid + 1, addr, w_op);
+//        m_commLSet.updateLine(line, tid + 1, addr, w_op);
+        m_commLMap.updateLine(line, tid + 1, addr, w_op);
     } else {
         // sh = 1;
         // one previous access => needs to be in pos 0
@@ -401,7 +427,17 @@ CommTracer::trace_comm_spat_tempo(IntPtr line, thread_id_t tid, UInt64 curr_ts,
         //commmap_s[line] = a;
         //m_commLine.insert(line, tid + 1);
         //threadLine->update(tid+1);
+//        m_commLSet.updateLine(line, tid + 1, addr, w_op);
+        m_commLMap.updateLine(line, tid + 1, addr, w_op);
+    }
+    
+    // Mem access counter
+    if (w_op == true) {
         m_commLSet.updateLine(line, tid + 1, addr, w_op);
+        updateThreadMemWrites(tid, dsize);
+    }
+    else {
+        updateThreadMemReads(tid, dsize);
     }
 }
 
@@ -474,11 +510,40 @@ CommTracer::trace_comm_spat(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr a
         //    m_commLSet.updateLine(line, tid + 1, addr, w_op);
     }
     
-    if (w_op == true)
+    if (w_op == true) {
         m_commLSet.updateLine(line, tid + 1, addr, w_op);
+        updateThreadMemWrites(tid, dsize);
+    }
+    else {
+        updateThreadMemReads(tid, dsize);
+    }
 }
 
 void CommTracer::trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize,
+        IntPtr addr, bool w_op) {
+    
+    if (w_op == true) {
+        UInt32 n_line = 1 + (dsize >> m_block_size);
+        //printf("[L-%ld] WRITE: %d, n_line: %d\n", line, dsize, n_line);
+        m_commLPS.updateCreateLineBatch(line, n_line, tid+1, addr);
+        updateThreadMemWrites(tid, dsize);
+    }
+    else {
+        CommLProdCons clps = m_commLPS.getLineLazy(line);
+        if (clps.isEmpty() == false) {
+            // First is the most recent one
+            if (clps.getFirst_addr() <= addr && tid != clps.getFirst()-1) {
+                inc_comm_prod(tid, clps.getFirst(), dsize);
+            }
+            else if (clps.getSecond() != 0 && tid != clps.getSecond()-1) {
+                inc_comm_prod(tid, clps.getSecond(), dsize);
+            }
+        }
+        updateThreadMemReads(tid, dsize);
+    }
+}
+
+void CommTracer::trace_comm_spat_tempo_prod(IntPtr line, thread_id_t tid, UInt64 curr_ts, UInt32 dsize,
         IntPtr addr, bool w_op) {
     
     if (w_op == true) {
@@ -503,9 +568,11 @@ void CommTracer::trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize
             // First is the most recent one
             if (clps.getFirst_addr() <= addr && tid != clps.getFirst()-1) {
                 inc_comm_prod(tid, clps.getFirst(), dsize);
+                add_comm_event(tid, clps.getFirst(), curr_ts, dsize);
             }
             else if (clps.getSecond() != 0 && tid != clps.getSecond()-1) {
                 inc_comm_prod(tid, clps.getSecond(), dsize);
+                add_comm_event(tid, clps.getSecond(), curr_ts, dsize);
             }
         }
         updateThreadMemReads(tid, dsize);
@@ -608,11 +675,20 @@ CommTracer::print_comm_events() {
     //int i, j, l, r;
     thread_id_t i, j, l, r;
 
-    std::cout << "[CommTracer] Saving communication events: " << fname_comm_events << std::endl;
+    std::cout << "[CommTracer] Saving communication events: " << fname_comm_events 
+              << " (nthreads="<< m_num_threads << ")" << std::endl;
     
     // Create temporary map for accumulating events
     std::vector<std::vector<std::unordered_map<UInt64, TComm>>> accums;
-
+    for (thread_id_t i = 0; i < m_num_threads; ++i) {
+        std::vector<std::unordered_map<UInt64, TComm>> t_accums;
+        for (thread_id_t i = 0; i < m_num_threads; ++i) {
+            std::unordered_map<UInt64, TComm> tCommMap;
+            t_accums.push_back(tCommMap);
+        }
+        accums.push_back(t_accums);
+    }
+    
     i = m_num_threads;
     while (i > 0) {
         i--;
@@ -620,9 +696,15 @@ CommTracer::print_comm_events() {
         for (j = 0; j < m_num_threads; j++) {
 
             //for (auto it : timeEventMap[i][j]) {
-            while (isFlushing[i])
-                sleep(1000);
+            //std::cout << "isFlushing[" << i << "] = " << isFlushing[i] << std::endl;
+            while (isFlushing[i] == true) {
+                usleep(1000);
+            }
 
+            //std::cout << i << "," << j << std::endl;
+
+            //flushLocks[i].acquire();
+            //flushLocks[i].lock();
             //for (auto it : nEvents[i][j]) {
             for (auto it : v_nEvents[i][j]) {
                 // Accumulate the pairs with just a different order
@@ -646,12 +728,19 @@ CommTracer::print_comm_events() {
                         v_szEvents[i][j][it.first];
                         //szEvents[i][j][it.first];
             }
+            //flushLocks[i].release();
+            //flushLocks[i].unlock();
         }
     }
+    // Clear events
+    v_nEvents.clear();
+    v_szEvents.clear();
 
     //f_accu.open(Sim()->getConfig()->formatOutputFileName(fname_accu).c_str());
     f_accu.open(fname_comm_events.c_str());
     if (f_accu.is_open()) {
+        f_accu << "t1,t2,ts,count,size\n";
+
         i = m_num_threads;
         while (i > 0) {
             i--;
@@ -808,6 +897,7 @@ void CommTracer::flush_thread_events(thread_id_t t1, thread_id_t t2) {
     //ss << "sim.comm-events-" << t1 << "_" << t2;
     String fname = fname_comm_events + "-" + itostr(t1) + "_" + itostr(t2);
 
+    std::cout << "[CommTracer] -- Flushing event buffer -> " << fname << std::endl;
     //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str(),
     //        std::ios::app);
     f.open(fname_comm_events.c_str(), std::ios::app);
@@ -825,11 +915,13 @@ void CommTracer::flush_thread_events(thread_id_t t1, thread_id_t t2) {
         // Clear the flushed events
         //threadLocks[t1].acquire();
         isFlushing[t1] = true;
+        //flushLocks[t1].lock();
         //nEvents[t1][t2].clear();
         v_nEvents[t1][t2].clear();
         //szEvents[t1][t2].clear();
         v_szEvents[t1][t2].clear();
         isFlushing[t1] = false;
+        //flushLocks[t1].unlock();
         //threadLocks[t2].release();
     } else {
         std::cerr << "Failed opening file: " << strerror(errno) << std::endl;

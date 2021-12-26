@@ -231,6 +231,7 @@ Simulator::~Simulator()
    LOG_PRINT("Simulator dtor starting...");
 
    m_hooks_manager->fini();
+   
 
    if (m_clock_skew_minimization_manager)
    {
@@ -244,7 +245,7 @@ Simulator::~Simulator()
    m_sim_thread_manager->quitSimThreads();
 
    m_transport->barrier();
-
+   
    if (m_rtn_tracer)
    {
       delete m_rtn_tracer;             m_rtn_tracer = NULL;

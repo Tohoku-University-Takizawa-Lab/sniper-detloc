@@ -37,6 +37,8 @@ struct TMemAccessCtr {
 struct TComm {
     UInt32 count;
     UInt64 size;
+
+    TComm() : count(0), size(0) {}
 };
 
 class CommTracer {
@@ -235,6 +237,7 @@ public:
     // Prod/cons methods
     void inc_comm_prod(thread_id_t a, thread_id_t b, UInt32 dsize);
     void trace_comm_spat_prod(IntPtr line, thread_id_t tid, UInt32 dsize, IntPtr addr, bool w_op);
+    void trace_comm_spat_tempo_prod(IntPtr line, thread_id_t tid, UInt64 tsc, UInt32 dsize, IntPtr addr, bool w_op);
     void incNumThreads(thread_id_t tid);
     void updateThreadMemWrites(thread_id_t tid, UInt32 dsize);
     void updateThreadMemReads(thread_id_t tid, UInt32 dsize);
@@ -269,6 +272,7 @@ private:
 
     //ThreadLines m_threadLines;
     CommLSet m_commLSet;
+    CommLMap m_commLMap;
     // Comm line of four window size
     CommLSetFour m_commLSetFour;
     // Comm line of prod/cons
@@ -316,7 +320,9 @@ private:
     //std::unordered_map<thread_id_t, UInt64> threadsLatMaxTime;
     //std::unordered_map<thread_id_t, UInt64> threadsLatSum;
     //Lock threadLocks[COMM_MAXTHREADS+1];
-    bool isFlushing[COMM_MAXTHREADS+1];
+ //   bool isFlushing[COMM_MAXTHREADS+1];
+    std::vector<bool> isFlushing;
+    std::vector<std::mutex> flushLocks;
     //UInt64 threadsMemAccesses[COMM_MAXTHREADS+1];
    // UInt64 threadsMemSizes[COMM_MAXTHREADS+1];
 

@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include "fixed_types.h"
 #include "lock.h"
+#include <unordered_map>
 
 /*
 struct CommLWin {
@@ -50,6 +51,10 @@ public:
     
     CommL(IntPtr line, size_t ref):
         m_Line(line), m_Ref(ref), m_First(0), m_Second(0), m_First_addr(0), m_Second_addr(0),
+        m_First_w_op(0), m_Second_w_op(0) {
+    }
+
+    CommL():m_Line(0), m_Ref(0), m_First(0), m_Second(0), m_First_addr(0), m_Second_addr(0),
         m_First_w_op(0), m_Second_w_op(0) {
     }
 
@@ -124,6 +129,25 @@ public:
     bool exists(IntPtr line);
     Lock &getLock() { return m_set_lock; }
     //CommLWin *getLineWindow(UInt64 addr);
+};
+
+#define LOCK_POOL_SIZE 1024
+
+class CommLMap {
+private:
+    Lock m_set_lock;
+    std::unordered_map<IntPtr, CommL> mapCommL;
+    std::vector<Lock> locks;
+
+public:
+    CommLMap();
+    ~CommLMap();
+    CommL getLine(IntPtr line);
+    CommL getLineMod(IntPtr line);
+    void updateLine(IntPtr line, thread_id_t tid, IntPtr addr, bool w_op);
+    bool exists(IntPtr line);
+    Lock &getLock() { return m_set_lock; }
+    Lock &getLock(IntPtr line) { return locks[line % LOCK_POOL_SIZE]; }
 };
 
 #endif /* COMML_H */
