@@ -33,7 +33,7 @@ CommTracer::CommTracer()
     fname_thread_lats = Sim()->getConfig()->formatOutputFileName("sim.thread_lats");
     fname_mem_access = Sim()->getConfig()->formatOutputFileName("sim.mem_access");
 
-    m_trace_mem = Sim()->getCfg()->getBoolDefault("comm_tracer/mem_access_enable", false);
+    //m_trace_mem = Sim()->getCfg()->getBoolDefault("comm_tracer/mem_access_enable", false);
     m_trace_comm = Sim()->getCfg()->getBoolDefault("comm_tracer/enable", false);
     if (m_trace_comm) {
         m_block_size = Sim()->getCfg()->getInt("comm_tracer/comm_size");
@@ -91,15 +91,21 @@ CommTracer::init() {
     }
      */
     //m_commLine.initZeros(m_max_block);
-   thread_id_t i;
-   struct TMemAccessCtr c = {0, 0, 0, 0, 0};
-   threadMemAccesses.resize(m_num_threads_res, c);
-   for (i = 0; i < m_num_threads_res; ++i)
-        threadMemAccesses[i].tid = i;
+   //thread_id_t i;
+   //struct TMemAccessCtr c = {0, 0, 0, 0, 0};
+   //threadMemAccesses.resize(m_num_threads_res, c);
+   //for (i = 0; i < m_num_threads_res; ++i)
+   //     threadMemAccesses[i].tid = i;
+   
+   for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+        struct TMemAccessCtr c = {i, 0, 0, 0, 0};
+        threadMemAccesses.push_back(c);
+        //threadMemAccesses[i].tid = i;
+   }
 
    v_comm_matrix.resize(m_num_threads_res);
    v_comm_sz_matrix.resize(m_num_threads_res);   
-   for (i = 0; i < m_num_threads_res; ++i) {
+   for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
         v_comm_matrix[i].resize(m_num_threads_res, 0);
         v_comm_sz_matrix[i].resize(m_num_threads_res, 0);
    }
@@ -109,11 +115,11 @@ CommTracer::init() {
         
    if (m_trace_comm_events) {
      for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
-        for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+        for (thread_id_t j = 0; j < m_num_threads_res; ++j) {
             std::vector<std::unordered_map<UInt64, UInt32>> v_peers(m_num_threads_res+1);
             std::vector<std::unordered_map<UInt64, UInt32>> v_sz_peers(m_num_threads_res+1);
             
-            for (thread_id_t i = 0; i < m_num_threads_res; ++i) {
+            for (thread_id_t k = 0; k < m_num_threads_res; ++k) {
                 std::unordered_map<UInt64, UInt32> nMap;
                 std::unordered_map<UInt64, UInt32> szMap;
                 v_peers.push_back(nMap);
@@ -150,8 +156,8 @@ CommTracer::fini() {
     }
     //if (m_trace_t_lats)
     //    print_t_lats();
-    if (m_trace_mem)
-        print_mem();
+    //if (m_trace_mem)
+    //    print_mem();
 }
 
 void
@@ -219,7 +225,7 @@ CommTracer::print_comm() {
      */
     //cout << fname << endl;
     //cout << fname_l << endl;
-    std::cout << "[CommTracer] Saving communication matrix to: " << fname_comm_count 
+    std::cout << "[CommTracer] Saving communication matrix to " << fname_comm_count 
                 << ',' << fname_comm_sz << std::endl;
 
     //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
@@ -862,7 +868,7 @@ void CommTracer::print_mem() {
     //String fname = "sim.mem-accesses";
     //int num_threads = Sim()->getConfig()->getApplicationCores();
 
-    std::cout << "[CommTracer] Printing mem. access counter: " << fname_mem_access << std::endl;
+    std::cout << "[CommTracer] Saving memory access counters to " << fname_mem_access << std::endl;
 
     //f.open(Sim()->getConfig()->formatOutputFileName(fname).c_str());
     f.open(fname_mem_access.c_str());

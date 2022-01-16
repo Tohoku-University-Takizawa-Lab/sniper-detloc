@@ -32,6 +32,9 @@ struct TMemAccessCtr {
     UInt32 nWrites;
     UInt64 szReads;
     UInt64 szWrites;
+    
+    // Constructor is defined on the implementation
+    //TMemAccessCtr(): tid(0), nReads(0), nWrites(0), szReads(0), szWrites(0) {}
 };
 
 struct TComm {
